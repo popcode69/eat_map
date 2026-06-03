@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "31222740499",
+    "project_id": "eatmap-7f09e",
+    "storage_bucket": "eatmap-7f09e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:31222740499:android:97ef99502dcc5bdf4a71e6",
+        "android_client_info": {
+          "package_name": "com.eatmap.client"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBM2tTtvb2rJnhxd8mE3BDDje7XZbJ9mPI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

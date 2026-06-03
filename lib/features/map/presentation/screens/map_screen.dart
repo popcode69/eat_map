@@ -1,0 +1,935 @@
+import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_modals.dart';
+import '../../../shell/presentation/screens/main_shell.dart';
+import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../auth/presentation/bloc/auth_state.dart';
+import '../../../auth/presentation/bloc/auth_event.dart';
+import '../../../zone/domain/entities/zone_entity.dart';
+import '../bloc/map_bloc.dart';
+import '../bloc/map_bloc.dart' as bloc_state;
+import '../../../zone/presentation/widgets/zone_detail_sheet.dart';
+
+class MapScreen extends StatefulWidget {
+  const MapScreen({super.key});
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  GoogleMapController? _mapController;
+  LatLng? _currentPosition;
+  bool _isLocationPermissionGranted = false;
+  Map<String, BitmapDescriptor> _markerIcons = {};
+  bool _isGeneratingMarkers = false;
+
+  // ─────────────────────────────────────────────────────────────────
+  // MARKER GENERATORS
+  // ─────────────────────────────────────────────────────────────────
+
+  /// Loads a network image as a [ui.Image]. Returns null on failure/timeout.
+  Future<ui.Image?> _loadNetworkImage(String url) async {
+    try {
+      final completer = Completer<ui.Image?>();
+      final stream = NetworkImage(url).resolve(const ImageConfiguration());
+      late ImageStreamListener listener;
+      listener = ImageStreamListener(
+        (info, _) {
+          stream.removeListener(listener);
+          completer.complete(info.image);
+        },
+        onError: (_, __) {
+          stream.removeListener(listener);
+          completer.complete(null);
+        },
+      );
+      stream.addListener(listener);
+      return await completer.future.timeout(const Duration(seconds: 5));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Generates a premium captured-zone marker with avatar or initials.
+  ///
+  /// When [isCrown] is true the marker denotes the locality's top Warlord —
+  /// it gets a gold ring and a crown perched on top of the medallion.
+  Future<BitmapDescriptor> _generateCapturedMarker({
+    required Color accentColor,
+    required bool isMyZone,
+    required String ownerInitial,
+    String? avatarUrl,
+    bool isCrown = false,
+  }) async {
+    ui.Image? avatarImg;
+    if (avatarUrl != null) {
+      avatarImg = await _loadNetworkImage(avatarUrl);
+    }
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    const double W = 130.0;
+    const double H = 158.0;
+    const Offset center = Offset(65, 62);
+    const double outerR = 48.0;
+    const double innerR = 42.0;
+    const double avatarR = 36.0;
+    const Color gold = Color(0xFFFFD700);
+    final Color ringColor = (isMyZone || isCrown) ? gold : accentColor;
+
+    // 1. Drop shadow beneath the circle
+    canvas.drawCircle(
+      Offset(center.dx, center.dy + 6),
+      outerR,
+      Paint()
+        ..color = Colors.black.withOpacity(0.40)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+    );
+
+    // 2. Colored outer glow
+    canvas.drawCircle(
+      center,
+      outerR + 5,
+      Paint()
+        ..color = ringColor.withOpacity(0.28)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+    );
+
+    // 3. White separator ring
+    canvas.drawCircle(center, outerR, Paint()..color = Colors.white.withOpacity(0.95));
+
+    // 4. Accent color ring
+    canvas.drawCircle(center, outerR - 3.5, Paint()..color = ringColor);
+
+    // 5. Dark radial-gradient background
+    canvas.drawCircle(
+      center,
+      innerR,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          center,
+          innerR,
+          [const Color(0xFF1C1C2E), const Color(0xFF0A0A14)],
+          [0.0, 1.0],
+        ),
+    );
+
+    // 6. Avatar photo or initial letter
+    if (avatarImg != null) {
+      canvas.save();
+      canvas.clipPath(Path()..addOval(Rect.fromCircle(center: center, radius: avatarR)));
+      canvas.drawImageRect(
+        avatarImg,
+        Rect.fromLTWH(0, 0, avatarImg.width.toDouble(), avatarImg.height.toDouble()),
+        Rect.fromCircle(center: center, radius: avatarR),
+        Paint()..filterQuality = FilterQuality.high,
+      );
+      canvas.restore();
+      // Subtle tint ring over avatar for visual coherence
+      canvas.drawCircle(
+        center,
+        avatarR,
+        Paint()
+          ..color = ringColor.withOpacity(0.22)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5,
+      );
+    } else {
+      final tp = TextPainter(textDirection: TextDirection.ltr)
+        ..text = TextSpan(
+          text: ownerInitial.toUpperCase(),
+          style: TextStyle(
+            fontSize: 38,
+            fontWeight: FontWeight.w900,
+            color: isMyZone ? gold : Colors.white,
+            shadows: [Shadow(color: ringColor.withOpacity(0.7), blurRadius: 10)],
+          ),
+        )
+        ..layout();
+      tp.paint(canvas, Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
+    }
+
+    // 7. Badge (top-right) — star for own, shield for enemy
+    const Offset badge = Offset(106, 22);
+    const double badgeR = 17.0;
+    canvas.drawCircle(badge, badgeR + 2,
+        Paint()
+          ..color = Colors.black.withOpacity(0.3)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
+    canvas.drawCircle(badge, badgeR,
+        Paint()..color = isMyZone ? const Color(0xFF1C1C2E) : accentColor);
+    canvas.drawCircle(
+      badge, badgeR,
+      Paint()
+        ..color = ringColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+    final badgeIcon = isMyZone ? Icons.star_rounded : Icons.shield_rounded;
+    final badgeTp = TextPainter(textDirection: TextDirection.ltr)
+      ..text = TextSpan(
+        text: String.fromCharCode(badgeIcon.codePoint),
+        style: TextStyle(fontSize: 19, fontFamily: badgeIcon.fontFamily, color: ringColor),
+      )
+      ..layout();
+    badgeTp.paint(canvas, Offset(badge.dx - badgeTp.width / 2, badge.dy - badgeTp.height / 2));
+
+    // 8. Pin tail with gradient fade
+    final tailPath = Path()
+      ..moveTo(65, 156)
+      ..lineTo(46, 110)
+      ..lineTo(84, 110)
+      ..close();
+    canvas.drawPath(
+      tailPath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          const Offset(65, 110),
+          const Offset(65, 156),
+          [ringColor, ringColor.withOpacity(0.0)],
+        ),
+    );
+
+    // 9. Crown for the locality's top Warlord — drawn last so it sits on top
+    if (isCrown) {
+      final crownTp = TextPainter(textDirection: TextDirection.ltr)
+        ..text = const TextSpan(
+          text: '👑',
+          style: TextStyle(fontSize: 30),
+        )
+        ..layout();
+      crownTp.paint(canvas, Offset(center.dx - crownTp.width / 2, -2));
+    }
+
+    final image = await recorder.endRecording().toImage(W.toInt(), H.toInt());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
+  }
+
+  /// Generates a premium uncaptured-zone marker with a food icon.
+  Future<BitmapDescriptor> _generateUncapturedMarker({
+    required IconData iconData,
+  }) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    const double W = 120.0;
+    const double H = 148.0;
+    const Offset center = Offset(60, 56);
+    const double outerR = 44.0;
+    const double innerR = 38.0;
+    const Color green = Color(0xFF00C853);
+    const Color greenBright = Color(0xFF69F0AE);
+
+    // 1. Drop shadow
+    canvas.drawCircle(
+      Offset(center.dx, center.dy + 5),
+      outerR,
+      Paint()
+        ..color = Colors.black.withOpacity(0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+    );
+
+    // 2. Green outer glow
+    canvas.drawCircle(
+      center,
+      outerR + 6,
+      Paint()
+        ..color = green.withOpacity(0.22)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+    );
+
+    // 3. White separator
+    canvas.drawCircle(center, outerR, Paint()..color = Colors.white.withOpacity(0.9));
+
+    // 4. Green ring
+    canvas.drawCircle(center, outerR - 3.5, Paint()..color = green);
+
+    // 5. Dark background with subtle radial gradient
+    canvas.drawCircle(
+      center,
+      innerR,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(center.dx - 8, center.dy - 8),
+          innerR * 1.4,
+          [const Color(0xFF1A2E1A), const Color(0xFF061006)],
+          [0.0, 1.0],
+        ),
+    );
+
+    // 6. Subtle inner glow ring
+    canvas.drawCircle(
+      center,
+      innerR,
+      Paint()
+        ..color = green.withOpacity(0.18)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+
+    // 7. Food icon
+    final iconTp = TextPainter(textDirection: TextDirection.ltr)
+      ..text = TextSpan(
+        text: String.fromCharCode(iconData.codePoint),
+        style: TextStyle(
+          fontSize: 34,
+          fontFamily: iconData.fontFamily,
+          package: iconData.fontPackage,
+          color: greenBright,
+          shadows: [Shadow(color: green.withOpacity(0.8), blurRadius: 8)],
+        ),
+      )
+      ..layout();
+    iconTp.paint(canvas, Offset(center.dx - iconTp.width / 2, center.dy - iconTp.height / 2));
+
+    // 8. "!" raid badge (top-right)
+    const Offset badge = Offset(97, 20);
+    const double badgeR = 14.0;
+    canvas.drawCircle(badge, badgeR + 2,
+        Paint()
+          ..color = Colors.black.withOpacity(0.25)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
+    canvas.drawCircle(badge, badgeR, Paint()..color = green);
+    canvas.drawCircle(badge, badgeR,
+        Paint()
+          ..color = Colors.white.withOpacity(0.9)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2);
+    final bangTp = TextPainter(textDirection: TextDirection.ltr)
+      ..text = const TextSpan(
+        text: '!',
+        style: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+        ),
+      )
+      ..layout();
+    bangTp.paint(canvas, Offset(badge.dx - bangTp.width / 2, badge.dy - bangTp.height / 2));
+
+    // 9. Pin tail with gradient
+    final tailPath = Path()
+      ..moveTo(60, 146)
+      ..lineTo(43, 100)
+      ..lineTo(77, 100)
+      ..close();
+    canvas.drawPath(
+      tailPath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          const Offset(60, 100),
+          const Offset(60, 146),
+          [green, green.withOpacity(0.0)],
+        ),
+    );
+
+    final image = await recorder.endRecording().toImage(W.toInt(), H.toInt());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
+  }
+
+  Future<void> _generateAllMarkers(
+      List<ZoneEntity> zones, String? currentUserId, String? currentUserAvatarUrl) async {
+    if (_isGeneratingMarkers) return;
+    _isGeneratingMarkers = true;
+
+    // Capture context-dependent value BEFORE any async gap
+    final Color fallbackColor = AppColors.getPrimary(context);
+    final Map<String, BitmapDescriptor> tempIcons = {};
+
+    // Locality's top Warlord = the captured zone with the most total raids.
+    // Gets a crowned marker (PRD §5.1). Needs at least one raid to qualify.
+    String? topWarlordZoneId;
+    int topRaids = 0;
+    for (final zone in zones) {
+      if (zone.warlordId != null && zone.totalRaids > topRaids) {
+        topRaids = zone.totalRaids;
+        topWarlordZoneId = zone.id;
+      }
+    }
+
+    for (final zone in zones) {
+      try {
+        if (zone.warlordId != null) {
+          // ── CAPTURED marker ──────────────────────────────────────
+          Color accentColor = fallbackColor;
+          try {
+            final hex = zone.customColour.replaceAll('#', '');
+            accentColor = Color(int.parse('FF$hex', radix: 16));
+          } catch (_) {}
+
+          final isMyZone = zone.warlordId == currentUserId;
+          final ownerInitial =
+              (zone.warlordUsername ?? zone.warlordId ?? 'W')[0];
+
+          // For the current user's zone, prefer the up-to-date auth avatar
+          final avatarUrl = isMyZone
+              ? (currentUserAvatarUrl ?? zone.warlordAvatarUrl)
+              : zone.warlordAvatarUrl;
+
+          tempIcons[zone.id] = await _generateCapturedMarker(
+            accentColor: accentColor,
+            isMyZone: isMyZone,
+            ownerInitial: ownerInitial,
+            avatarUrl: avatarUrl,
+            isCrown: zone.id == topWarlordZoneId,
+          );
+        } else {
+          // ── UNCAPTURED / available marker ────────────────────────
+          final IconData icon = zone.customIcon == 'hamburger'
+              ? Icons.restaurant
+              : zone.customIcon == 'pizza'
+                  ? Icons.local_pizza
+                  : Icons.lunch_dining;
+
+          tempIcons[zone.id] =
+              await _generateUncapturedMarker(iconData: icon);
+        }
+      } catch (_) {
+        // Skip on canvas error — fallback pin will be used
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _markerIcons = tempIcons;
+        _isGeneratingMarkers = false;
+      });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // LIFECYCLE
+  // ─────────────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    _getUserLocation();
+    context.read<MapBloc>().add(const LoadNearbyZonesRequested('te7u6b'));
+  }
+
+  Future<void> _getUserLocation() async {
+    // 1. Location service check
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (!mounted) return;
+      final shouldEnable = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Location Required'),
+          content: const Text(
+            'Location services are off. Enable them to see zones near you.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Skip'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Enable'),
+            ),
+          ],
+        ),
+      );
+      if (shouldEnable == true) {
+        await Geolocator.openLocationSettings();
+        // Re-check after user returns from settings
+        serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      }
+      if (!serviceEnabled) {
+        if (mounted) setState(() => _currentPosition = const LatLng(26.9124, 75.7873));
+        return;
+      }
+    }
+
+    // 2. Permission check
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (mounted) setState(() => _currentPosition = const LatLng(26.9124, 75.7873));
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Permission Denied'),
+          content: const Text(
+            'Location permission is permanently denied. Open app settings to enable it.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Skip'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await Geolocator.openAppSettings();
+              },
+              child: const Text('Open Settings'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) setState(() => _currentPosition = const LatLng(26.9124, 75.7873));
+      return;
+    }
+
+    if (mounted) setState(() => _isLocationPermissionGranted = true);
+
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final latLng = LatLng(position.latitude, position.longitude);
+      if (mounted) setState(() => _currentPosition = latLng);
+
+      _mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+            CameraPosition(target: latLng, zoom: 15.5)),
+      );
+
+      if (mounted) {
+        context.read<AuthBloc>().add(UpdateLocationRequested(
+              lat: position.latitude,
+              lng: position.longitude,
+            ));
+        context.read<MapBloc>().add(LoadNearbyZonesRequested(
+              'te7u6b',
+              lat: position.latitude,
+              lng: position.longitude,
+            ));
+      }
+    } catch (_) {}
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // INTERACTION
+  // ─────────────────────────────────────────────────────────────────
+
+  void _triggerHaptic() => HapticFeedback.lightImpact();
+
+  void _onZoneTapped(ZoneEntity zone) {
+    _triggerHaptic();
+    context.read<MapBloc>().add(SelectZoneRequested(zone));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ZoneDetailSheet(
+        zone: zone,
+        onRaidStarted: () {
+          context.push('/raid-timer', extra: {
+            'zoneId': zone.id,
+            'zoneName': zone.name,
+            'colour': zone.customColour,
+          });
+        },
+        onZoneUpdated: (updatedZone) {
+          if (_currentPosition != null) {
+            context.read<MapBloc>().add(LoadNearbyZonesRequested(
+                  'te7u6b',
+                  lat: _currentPosition!.latitude,
+                  lng: _currentPosition!.longitude,
+                ));
+          } else {
+            context
+                .read<MapBloc>()
+                .add(const LoadNearbyZonesRequested('te7u6b'));
+          }
+        },
+      ),
+    ).whenComplete(
+        () => context.read<MapBloc>().add(const SelectZoneRequested(null)));
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // BUILD
+  // ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final authState = context.watch<AuthBloc>().state;
+    final String username =
+        authState is Authenticated ? authState.user.username : 'Raider';
+    final double balance =
+        authState is Authenticated ? authState.user.walletBalance : 0.00;
+    final int points =
+        authState is Authenticated ? authState.user.totalPoints : 0;
+    final String? currentUserId =
+        authState is Authenticated ? authState.user.id : null;
+    final String? currentUserAvatarUrl =
+        authState is Authenticated ? authState.user.avatarUrl : null;
+
+    return Scaffold(
+      key: _scaffoldKey,
+      drawer: _buildDrawer(),
+      backgroundColor: AppColors.getBackground(context),
+      body: Stack(
+        children: [
+          _buildMapCanvas(currentUserId, currentUserAvatarUrl),
+          _buildFloatingHeader(username, points, balance),
+          _buildFloatingLegend(),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // MARKERS
+  // ─────────────────────────────────────────────────────────────────
+
+  Set<Marker> _buildMarkers(List<ZoneEntity> zones, String? currentUserId) {
+    return zones.map((zone) {
+      final BitmapDescriptor? icon = _markerIcons[zone.id];
+      final bool isCaptured = zone.warlordId != null;
+      final bool isMyZone = isCaptured && zone.warlordId == currentUserId;
+
+      // Fallback hue while custom markers are generating
+      final double hue = isMyZone
+          ? BitmapDescriptor.hueYellow
+          : isCaptured
+              ? BitmapDescriptor.hueRed
+              : BitmapDescriptor.hueGreen;
+
+      return Marker(
+        markerId: MarkerId(zone.id),
+        position: LatLng(zone.lat, zone.lng),
+        icon: icon ?? BitmapDescriptor.defaultMarkerWithHue(hue),
+        consumeTapEvents: true,
+        onTap: () => _onZoneTapped(zone),
+      );
+    }).toSet();
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // MAP CANVAS
+  // ─────────────────────────────────────────────────────────────────
+
+  Widget _buildMapCanvas(String? currentUserId, String? currentUserAvatarUrl) {
+    return BlocConsumer<MapBloc, MapState>(
+      listener: (context, state) {
+        if (state is bloc_state.MapLoaded) {
+          // Regenerate all markers whenever zone list changes
+          _isGeneratingMarkers = false;
+          _generateAllMarkers(state.zones, currentUserId, currentUserAvatarUrl);
+        }
+      },
+      builder: (context, state) {
+        if (state is MapLoading) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: AppColors.getPrimary(context)),
+                const SizedBox(height: 16),
+                Text('Loading nearby places...',
+                    style: AppTypography.caption.copyWith(
+                        color: AppColors.getOnSurfaceMuted(context))),
+              ],
+            ),
+          );
+        }
+
+        if (state is MapFailure) {
+          return Center(
+            child: Text(
+              'Could not load zones: ${state.message}',
+              style: TextStyle(color: AppColors.getError(context)),
+            ),
+          );
+        }
+
+        if (state is bloc_state.MapLoaded) {
+          return GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: _currentPosition ?? const LatLng(26.9124, 75.7873),
+              zoom: 14.5,
+            ),
+            markers: _buildMarkers(state.zones, currentUserId),
+            mapType: MapType.normal,
+            myLocationEnabled: _isLocationPermissionGranted,
+            myLocationButtonEnabled: true,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            compassEnabled: true,
+            onMapCreated: (GoogleMapController controller) {
+              _mapController = controller;
+              if (_currentPosition != null) {
+                controller.animateCamera(CameraUpdate.newCameraPosition(
+                  CameraPosition(target: _currentPosition!, zoom: 15.5),
+                ));
+              }
+            },
+          );
+        }
+
+        return Container();
+      },
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // HEADER & LEGEND
+  // ─────────────────────────────────────────────────────────────────
+
+  Widget _buildFloatingHeader(String username, int points, double balance) {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 8,
+      left: 16,
+      right: 16,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          GestureDetector(
+            onTap: () {
+              _triggerHaptic();
+              _scaffoldKey.currentState?.openDrawer();
+            },
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.getSurface(context),
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.getBorder(context), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2)),
+                ],
+              ),
+              child: Icon(Icons.menu, color: AppColors.getOnSurface(context)),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: AppColors.getBorder(context), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2)),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.military_tech,
+                    color: AppColors.getWarning(context), size: 20),
+                const SizedBox(width: 4),
+                Text('$points PTS',
+                    style: AppTypography.labelLarge
+                        .copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(width: 12),
+                Container(
+                    width: 1.5,
+                    height: 16,
+                    color: AppColors.getBorder(context)),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () {
+                    _triggerHaptic();
+                    MainShell.of(context)?.goToTab(ShellTab.wallet);
+                  },
+                  child: Row(
+                    children: [
+                      Icon(Icons.account_balance_wallet,
+                          color: AppColors.getSuccess(context), size: 18),
+                      const SizedBox(width: 4),
+                      Text(
+                        '₹${balance.toStringAsFixed(0)}',
+                        style: AppTypography.labelLarge.copyWith(
+                            color: AppColors.getSuccess(context),
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingLegend() {
+    return Positioned(
+      bottom: MediaQuery.of(context).padding.bottom + 16,
+      left: 16,
+      right: 16,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+        decoration: BoxDecoration(
+          color: AppColors.getSurface(context),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.getBorder(context), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 12,
+                offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildLegendItem(
+                const Color(0xFF00E676), Icons.restaurant_outlined, 'Open'),
+            _buildLegendItem(
+                AppColors.getPrimary(context), Icons.shield_rounded, 'Enemy'),
+            _buildLegendItem(
+                const Color(0xFFFFD700), Icons.star_rounded, 'Mine'),
+            _buildLegendCrown('King'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(Color color, IconData icon, String text) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(icon, color: color, size: 14),
+        ),
+        const SizedBox(width: 6),
+        Text(text,
+            style: AppTypography.caption
+                .copyWith(fontWeight: FontWeight.bold, fontSize: 11)),
+      ],
+    );
+  }
+
+  /// Legend chip for the locality's top Warlord — uses the crown emoji to
+  /// match the crowned map marker.
+  Widget _buildLegendCrown(String text) {
+    const Color gold = Color(0xFFFFD700);
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: gold.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: const Text('👑', style: TextStyle(fontSize: 12)),
+        ),
+        const SizedBox(width: 6),
+        Text(text,
+            style: AppTypography.caption
+                .copyWith(fontWeight: FontWeight.bold, fontSize: 11)),
+      ],
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // DRAWER
+  // ─────────────────────────────────────────────────────────────────
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: AppColors.getBackground(context),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context),
+              border: Border(
+                  bottom: BorderSide(
+                      color: AppColors.getBorder(context), width: 1.5)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Container(
+                  height: 48,
+                  width: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.getPrimaryLight(context),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.shield_outlined,
+                      color: AppColors.getPrimary(context)),
+                ),
+                const SizedBox(height: 12),
+                Text('EatMap Tactical Command',
+                    style: AppTypography.titleLarge.copyWith(fontSize: 16)),
+              ],
+            ),
+          ),
+          _buildDrawerItem(
+              Icons.map_outlined, 'Tactical Map', () => Navigator.pop(context)),
+          _buildDrawerItem(Icons.account_balance_wallet_outlined,
+              'Wallet & Earnings', () {
+            Navigator.pop(context);
+            MainShell.of(context)?.goToTab(ShellTab.wallet);
+          }),
+          _buildDrawerItem(Icons.leaderboard_outlined, 'City Rankings', () {
+            Navigator.pop(context);
+            MainShell.of(context)?.goToTab(ShellTab.ranks);
+          }),
+          _buildDrawerItem(Icons.person_outline, 'Raider Profile', () {
+            Navigator.pop(context);
+            MainShell.of(context)?.goToTab(ShellTab.profile);
+          }),
+          const Divider(),
+          _buildDrawerItem(Icons.logout, 'Sign Out', () async {
+            _triggerHaptic();
+            final confirmed = await AppModals.confirm(
+              context,
+              title: 'Stand down, Raider?',
+              message: 'You will be signed out and your strongholds left undefended.',
+              confirmLabel: 'Sign Out',
+              cancelLabel: 'Stay',
+              icon: Icons.logout_rounded,
+              destructive: true,
+            );
+            if (!confirmed || !mounted) return;
+            context.read<AuthBloc>().add(SignOutRequested());
+            context.go('/login');
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: AppColors.getOnSurface(context)),
+      title: Text(title,
+          style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.w500)),
+      onTap: onTap,
+    );
+  }
+}
