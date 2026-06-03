@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui' as ui;
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -855,81 +856,421 @@ class _MapScreenState extends State<MapScreen> {
   // DRAWER
   // ─────────────────────────────────────────────────────────────────
 
+  static const List<String> _levelTitles = [
+    'Taster', 'Regular', 'Explorer', 'Zone Warlord',
+    'Food Baron', 'City Legend', 'Nation Chief',
+  ];
+
   Widget _buildDrawer() {
+    final authState = context.watch<AuthBloc>().state;
+    final user = authState is Authenticated ? authState.user : null;
+    final displayName = user?.displayName ?? user?.username ?? 'Raider';
+    final username = user?.username ?? 'raider';
+    final avatarUrl = user?.avatarUrl;
+    final level = user?.level ?? 1;
+    final points = user?.totalPoints ?? 0;
+    final balance = user?.walletBalance ?? 0.0;
+    final levelTitle = level >= 1 && level <= _levelTitles.length
+        ? _levelTitles[level - 1]
+        : 'Nation Chief';
+
     return Drawer(
-      backgroundColor: AppColors.getBackground(context),
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          DrawerHeader(
-            decoration: BoxDecoration(
-              color: AppColors.getSurface(context),
-              border: Border(
-                  bottom: BorderSide(
-                      color: AppColors.getBorder(context), width: 1.5)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Container(
-                  height: 48,
-                  width: 48,
-                  decoration: BoxDecoration(
-                    color: AppColors.getPrimaryLight(context),
-                    borderRadius: BorderRadius.circular(12),
+      width: 300,
+      backgroundColor: Colors.transparent,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+        child: Container(
+          color: AppColors.getBackground(context),
+          child: Column(
+            children: [
+              // ── HEADER ──────────────────────────────────────────
+              _buildDrawerHeader(
+                  displayName, username, avatarUrl, level, levelTitle, points, balance),
+
+              // ── NAV ITEMS ────────────────────────────────────────
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionLabel('NAVIGATE'),
+                      const SizedBox(height: 6),
+                      _buildNavRow(
+                        icon: Icons.map_rounded,
+                        label: 'Tactical Map',
+                        subtitle: 'Conquer zones near you',
+                        color: AppColors.getPrimary(context),
+                        onTap: () => Navigator.pop(context),
+                      ),
+                      _buildNavRow(
+                        icon: Icons.account_balance_wallet_rounded,
+                        label: 'Wallet & Earnings',
+                        subtitle: '₹${balance.toStringAsFixed(0)} available',
+                        color: AppColors.getSuccess(context),
+                        onTap: () {
+                          Navigator.pop(context);
+                          MainShell.of(context)?.goToTab(ShellTab.wallet);
+                        },
+                      ),
+                      _buildNavRow(
+                        icon: Icons.leaderboard_rounded,
+                        label: 'City Rankings',
+                        subtitle: 'See who rules the city',
+                        color: AppColors.getWarning(context),
+                        onTap: () {
+                          Navigator.pop(context);
+                          MainShell.of(context)?.goToTab(ShellTab.ranks);
+                        },
+                      ),
+                      _buildNavRow(
+                        icon: Icons.person_rounded,
+                        label: 'Raider Profile',
+                        subtitle: 'Lv.$level — $levelTitle',
+                        color: const Color(0xFF7C4DFF),
+                        onTap: () {
+                          Navigator.pop(context);
+                          MainShell.of(context)?.goToTab(ShellTab.profile);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Divider(color: AppColors.getBorder(context), height: 1),
+                      const SizedBox(height: 16),
+                      _buildSectionLabel('DISCOVER'),
+                      const SizedBox(height: 6),
+                      _buildNavRow(
+                        icon: Icons.notifications_rounded,
+                        label: 'Notifications',
+                        subtitle: 'Raids, rewards & alerts',
+                        color: const Color(0xFF00BCD4),
+                        onTap: () {
+                          Navigator.pop(context);
+                          context.push('/notifications');
+                        },
+                      ),
+                      _buildNavRow(
+                        icon: Icons.qr_code_2_rounded,
+                        label: 'Food Passport',
+                        subtitle: 'Your conquest history',
+                        color: const Color(0xFFFF6F00),
+                        onTap: () {
+                          Navigator.pop(context);
+                          context.push('/profile/passport');
+                        },
+                      ),
+                    ],
                   ),
-                  child: Icon(Icons.shield_outlined,
-                      color: AppColors.getPrimary(context)),
                 ),
-                const SizedBox(height: 12),
-                Text('EatMap Tactical Command',
-                    style: AppTypography.titleLarge.copyWith(fontSize: 16)),
-              ],
-            ),
+              ),
+
+              // ── FOOTER ──────────────────────────────────────────
+              _buildDrawerFooter(),
+            ],
           ),
-          _buildDrawerItem(
-              Icons.map_outlined, 'Tactical Map', () => Navigator.pop(context)),
-          _buildDrawerItem(Icons.account_balance_wallet_outlined,
-              'Wallet & Earnings', () {
-            Navigator.pop(context);
-            MainShell.of(context)?.goToTab(ShellTab.wallet);
-          }),
-          _buildDrawerItem(Icons.leaderboard_outlined, 'City Rankings', () {
-            Navigator.pop(context);
-            MainShell.of(context)?.goToTab(ShellTab.ranks);
-          }),
-          _buildDrawerItem(Icons.person_outline, 'Raider Profile', () {
-            Navigator.pop(context);
-            MainShell.of(context)?.goToTab(ShellTab.profile);
-          }),
-          const Divider(),
-          _buildDrawerItem(Icons.logout, 'Sign Out', () async {
-            _triggerHaptic();
-            final confirmed = await AppModals.confirm(
-              context,
-              title: 'Stand down, Raider?',
-              message: 'You will be signed out and your strongholds left undefended.',
-              confirmLabel: 'Sign Out',
-              cancelLabel: 'Stay',
-              icon: Icons.logout_rounded,
-              destructive: true,
-            );
-            if (!confirmed || !mounted) return;
-            context.read<AuthBloc>().add(SignOutRequested());
-            context.go('/login');
-          }),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap) {
-    return ListTile(
-      leading: Icon(icon, color: AppColors.getOnSurface(context)),
-      title: Text(title,
-          style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.w500)),
-      onTap: onTap,
+  Widget _buildDrawerHeader(
+    String displayName,
+    String username,
+    String? avatarUrl,
+    int level,
+    String levelTitle,
+    int points,
+    double balance,
+  ) {
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF8B0000), Color(0xFFE53935), Color(0xFFEF5350)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Avatar + name ──────────────────────────────────
+              Row(
+                children: [
+                  // Avatar with white ring
+                  Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          width: 2.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: avatarUrl != null
+                          ? CachedNetworkImage(
+                              imageUrl: avatarUrl,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) => _drawerAvatarPlaceholder(),
+                              errorWidget: (_, __, ___) =>
+                                  _drawerAvatarPlaceholder(),
+                            )
+                          : _drawerAvatarPlaceholder(),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayName,
+                          style: AppTypography.titleLarge.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '@$username',
+                          style: AppTypography.caption.copyWith(
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 6),
+                        // Level badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(100),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.35),
+                                width: 1),
+                          ),
+                          child: Text(
+                            '⚔️  Lv.$level · $levelTitle',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+
+              // ── Stats row ──────────────────────────────────────
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.22), width: 1),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                        child: _buildStatChip('⚔️', '$points', 'Points')),
+                    Container(
+                        width: 1,
+                        height: 32,
+                        color: Colors.white.withValues(alpha: 0.3)),
+                    Expanded(
+                        child: _buildStatChip(
+                            '💰', '₹${balance.toStringAsFixed(0)}', 'Balance')),
+                    Container(
+                        width: 1,
+                        height: 32,
+                        color: Colors.white.withValues(alpha: 0.3)),
+                    Expanded(child: _buildStatChip('🛡️', '5', 'Zones')),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerAvatarPlaceholder() {
+    return Container(
+      color: Colors.white.withValues(alpha: 0.15),
+      child: const Icon(Icons.person_rounded, color: Colors.white, size: 30),
+    );
+  }
+
+  Widget _buildStatChip(String emoji, String value, String label) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(emoji, style: const TextStyle(fontSize: 15)),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: AppTypography.labelLarge
+              .copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        Text(
+          label,
+          style: AppTypography.labelSmall
+              .copyWith(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 12),
+      child: Text(
+        label,
+        style: AppTypography.labelSmall.copyWith(
+          color: AppColors.getOnSurfaceMuted(context),
+          letterSpacing: 1.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavRow({
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(14),
+          splashColor: color.withValues(alpha: 0.08),
+          highlightColor: color.withValues(alpha: 0.05),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: color, size: 20),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: AppTypography.bodyLarge
+                            .copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        subtitle,
+                        style: AppTypography.caption.copyWith(
+                            color: AppColors.getOnSurfaceMuted(context)),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded,
+                    color: AppColors.getOnSurfaceMuted(context), size: 18),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawerFooter() {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          16, 8, 16, 16 + MediaQuery.of(context).padding.bottom),
+      child: Column(
+        children: [
+          Divider(color: AppColors.getBorder(context), height: 1),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text('Sign Out'),
+              onPressed: () async {
+                _triggerHaptic();
+                final confirmed = await AppModals.confirm(
+                  context,
+                  title: 'Stand down, Raider?',
+                  message:
+                      'You will be signed out and your strongholds left undefended.',
+                  confirmLabel: 'Sign Out',
+                  cancelLabel: 'Stay',
+                  icon: Icons.logout_rounded,
+                  destructive: true,
+                );
+                if (!confirmed || !mounted) return;
+                context.read<AuthBloc>().add(SignOutRequested());
+                context.go('/login');
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.getError(context),
+                side: BorderSide(
+                    color: AppColors.getError(context).withValues(alpha: 0.5)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                textStyle: AppTypography.labelLarge
+                    .copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'EatMap v1.0.0',
+            style: AppTypography.labelSmall
+                .copyWith(color: AppColors.getOnSurfaceMuted(context)),
+          ),
+        ],
+      ),
     );
   }
 }

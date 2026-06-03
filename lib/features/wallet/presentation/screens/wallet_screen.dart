@@ -257,7 +257,7 @@ class _WalletScreenState extends State<WalletScreen> {
             '₹${balance.toStringAsFixed(2)}',
             style: AppTypography.displayLarge.copyWith(
               color: AppColors.getSuccess(context),
-              fontSize: 38,
+              fontSize: 30,
             ),
           ),
           const SizedBox(height: 16),

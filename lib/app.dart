@@ -281,6 +281,21 @@ class EatMapApp extends StatelessWidget {
                   // App ships light-first; flip to ThemeMode.system to re-enable dark.
                   themeMode: ThemeMode.light,
 
+                  // Keep text legible but layout-safe: clamp the device's font
+                  // scale so very large/small system settings can't break UI.
+                  builder: (context, child) {
+                    final mq = MediaQuery.of(context);
+                    return MediaQuery(
+                      data: mq.copyWith(
+                        textScaler: mq.textScaler.clamp(
+                          minScaleFactor: 0.9,
+                          maxScaleFactor: 1.15,
+                        ),
+                      ),
+                      child: child!,
+                    );
+                  },
+
                   // ── LIGHT THEME ────────────────────────────────
                   theme: ThemeData(
                     useMaterial3: true,

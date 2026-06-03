@@ -107,6 +107,15 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Brand fonts (variable TTFs — weight axis used by fontWeight).
+  fonts:
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk.ttf
+    - family: DMSans
+      fonts:
+        - asset: assets/fonts/DMSans.ttf
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
