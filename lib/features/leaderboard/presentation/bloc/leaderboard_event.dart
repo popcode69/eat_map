@@ -9,9 +9,10 @@ abstract class LeaderboardEvent extends Equatable {
 
 class LoadLeaderboardRequested extends LeaderboardEvent {
   final String scope; // 'city' | 'global' | 'squad'
+  final String? city; // only relevant for scope == 'city'
 
-  const LoadLeaderboardRequested(this.scope);
+  const LoadLeaderboardRequested(this.scope, {this.city});
 
   @override
-  List<Object> get props => [scope];
+  List<Object> get props => [scope, city ?? ''];
 }

@@ -28,6 +28,12 @@ class ApiEndpoints {
   static const String walletTransactions = '/wallet/transactions';
   static const String walletWithdraw = '/wallet/withdraw';
 
+  // ── Place Requests ──────────────────────────────────────────────────
+  static const String submitPlaceRequest = '/places/requests';
+
   // ── Leaderboard ─────────────────────────────────────────────────────
-  static const String leaderboard = '/leaderboard';
+  static const String leaderboard = '/leaderboard'; // kept for reference
+  static const String leaderboardCity = '/leaderboard/city';
+  static const String leaderboardGlobal = '/leaderboard/global';
+  static const String leaderboardSquad = '/leaderboard/squad';
 }

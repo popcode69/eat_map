@@ -476,6 +476,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
             MainShell.of(context)?.goToTab(ShellTab.wallet);
           },
         ),
+        const SizedBox(height: 12),
+        _buildNavCard(
+          icon: Icons.add_location_alt_rounded,
+          title: 'SUGGEST A PLACE',
+          subtitle: 'Request admin to add a new restaurant or café',
+          color: const Color(0xFF7C4DFF),
+          onTap: () {
+            _triggerHaptic();
+            context.push('/request-place');
+          },
+        ),
       ],
     );
   }

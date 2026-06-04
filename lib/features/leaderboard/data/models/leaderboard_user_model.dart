@@ -13,12 +13,14 @@ class LeaderboardUserModel extends LeaderboardUserEntity {
 
   factory LeaderboardUserModel.fromJson(Map<String, dynamic> json) {
     return LeaderboardUserModel(
-      rank: json['rank'] as int,
+      rank: (json['rank'] as num).toInt(),
       username: json['username'] as String,
       displayName: json['display_name'] as String?,
       avatarUrl: json['avatar_url'] as String?,
-      totalPoints: json['total_points'] as int,
-      warlordCount: json['warlord_count'] as int,
+      // backend sends 'points' (new) or 'total_points' (old mock)
+      totalPoints: ((json['points'] ?? json['total_points']) as num?)?.toInt() ?? 0,
+      // backend sends 'active_strongholds_count' (new) or 'warlord_count' (old mock)
+      warlordCount: ((json['active_strongholds_count'] ?? json['warlord_count']) as num?)?.toInt() ?? 0,
       squadName: json['squad_name'] as String?,
     );
   }

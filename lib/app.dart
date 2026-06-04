@@ -39,6 +39,11 @@ import 'features/notifications/presentation/screens/notifications_screen.dart';
 // Onboarding
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 
+// Place request
+import 'features/places/data/repositories/place_request_repository_impl.dart';
+import 'features/places/presentation/bloc/place_request_bloc.dart';
+import 'features/places/presentation/screens/request_place_screen.dart';
+
 import 'injection_container.dart' as di;
 
 // ─────────────────────────────────────────────────────────────────
@@ -105,6 +110,18 @@ class EatMapApp extends StatelessWidget {
             _buildPage(const FoodPassportScreen(), state),
       ),
       GoRoute(
+        path: '/request-place',
+        pageBuilder: (context, state) => _buildPage(
+          BlocProvider(
+            create: (_) => PlaceRequestBloc(
+              repo: PlaceRequestRepositoryImpl(dioClient: di.sl()),
+            ),
+            child: const RequestPlaceScreen(),
+          ),
+          state,
+        ),
+      ),
+      GoRoute(
         path: '/notifications',
         pageBuilder: (context, state) =>
             _buildPage(const NotificationsScreen(), state),
@@ -118,6 +135,8 @@ class EatMapApp extends StatelessWidget {
               zoneId: params['zoneId'] as String,
               zoneName: params['zoneName'] as String,
               colour: params['colour'] as String,
+              userLat: (params['userLat'] as num?)?.toDouble(),
+              userLng: (params['userLng'] as num?)?.toDouble(),
             ),
             state,
           );

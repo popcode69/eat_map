@@ -132,16 +132,43 @@ class LeaderboardRepositoryImpl implements LeaderboardRepository {
   LeaderboardRepositoryImpl({required DioClient dioClient}) : _dioClient = dioClient;
 
   @override
-  Future<Either<Failure, List<LeaderboardUserEntity>>> getLeaderboard(String scope) async {
+  Future<Either<Failure, List<LeaderboardUserEntity>>> getLeaderboard(
+      String scope, {String? city}) async {
     try {
-      final response = await _dioClient.dio.get(ApiEndpoints.leaderboard, queryParameters: {'scope': scope});
-      final dataList = response.data as List;
-      final rankList = dataList
+      // Each scope has its own endpoint.
+      // City leaderboard also accepts ?city=<name>&period=week query params.
+      String endpoint;
+      Map<String, dynamic>? queryParams;
+
+      switch (scope) {
+        case 'city':
+          endpoint = ApiEndpoints.leaderboardCity;
+          queryParams = {
+            if (city != null && city.isNotEmpty) 'city': city,
+            'period': 'week',
+          };
+        case 'squad':
+          endpoint = ApiEndpoints.leaderboardSquad;
+        default: // 'global'
+          endpoint = ApiEndpoints.leaderboardGlobal;
+      }
+
+      final response = await _dioClient.dio.get(
+        endpoint,
+        queryParameters: queryParams,
+      );
+
+      // Response: { scope, city, period, entries: [...] }
+      final body = response.data as Map<String, dynamic>;
+      final entries = body['entries'] as List;
+      final rankList = entries
           .map((json) => LeaderboardUserModel.fromJson(json as Map<String, dynamic>))
           .toList();
       return Right(rankList);
     } on DioException catch (e) {
-      if (e.type == DioExceptionType.connectionError || e.type == DioExceptionType.connectionTimeout) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.unknown) {
         return Right(_mockData[scope] ?? _mockData['city']!);
       }
       return Left(ErrorHandler.handle(e.error ?? e));

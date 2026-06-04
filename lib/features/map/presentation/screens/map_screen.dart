@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../../../core/cache/secure_storage.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_modals.dart';
@@ -15,6 +16,7 @@ import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../../auth/presentation/bloc/auth_event.dart';
 import '../../../zone/domain/entities/zone_entity.dart';
+import '../../../raid/presentation/bloc/raid_bloc.dart' show RaidBloc, RaidResumeRequested, RaidTimerActive, RaidTimerCompleted;
 import '../bloc/map_bloc.dart';
 import '../bloc/map_bloc.dart' as bloc_state;
 import '../../../zone/presentation/widgets/zone_detail_sheet.dart';
@@ -79,38 +81,39 @@ class _MapScreenState extends State<MapScreen> {
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    const double W = 130.0;
-    const double H = 158.0;
-    const Offset center = Offset(65, 62);
-    const double outerR = 48.0;
-    const double innerR = 42.0;
-    const double avatarR = 36.0;
+    // ~60 % of the old 130×158 canvas
+    const double W = 80.0;
+    const double H = 96.0;
+    const Offset center = Offset(40, 38);
+    const double outerR = 30.0;
+    const double innerR = 26.0;
+    const double avatarR = 22.0;
     const Color gold = Color(0xFFFFD700);
-    final Color ringColor = (isMyZone || isCrown) ? gold : accentColor;
+    final Color ringColor = accentColor;
 
-    // 1. Drop shadow beneath the circle
+    // 1. Drop shadow
     canvas.drawCircle(
-      Offset(center.dx, center.dy + 6),
+      Offset(center.dx, center.dy + 4),
       outerR,
       Paint()
         ..color = Colors.black.withOpacity(0.40)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
     );
 
     // 2. Colored outer glow
     canvas.drawCircle(
       center,
-      outerR + 5,
+      outerR + 4,
       Paint()
         ..color = ringColor.withOpacity(0.28)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
     // 3. White separator ring
     canvas.drawCircle(center, outerR, Paint()..color = Colors.white.withOpacity(0.95));
 
     // 4. Accent color ring
-    canvas.drawCircle(center, outerR - 3.5, Paint()..color = ringColor);
+    canvas.drawCircle(center, outerR - 3, Paint()..color = ringColor);
 
     // 5. Dark radial-gradient background
     canvas.drawCircle(
@@ -136,77 +139,51 @@ class _MapScreenState extends State<MapScreen> {
         Paint()..filterQuality = FilterQuality.high,
       );
       canvas.restore();
-      // Subtle tint ring over avatar for visual coherence
       canvas.drawCircle(
         center,
         avatarR,
         Paint()
           ..color = ringColor.withOpacity(0.22)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
+          ..strokeWidth = 2,
       );
     } else {
       final tp = TextPainter(textDirection: TextDirection.ltr)
         ..text = TextSpan(
           text: ownerInitial.toUpperCase(),
           style: TextStyle(
-            fontSize: 38,
+            fontSize: 24,
             fontWeight: FontWeight.w900,
             color: isMyZone ? gold : Colors.white,
-            shadows: [Shadow(color: ringColor.withOpacity(0.7), blurRadius: 10)],
+            shadows: [Shadow(color: ringColor.withOpacity(0.7), blurRadius: 8)],
           ),
         )
         ..layout();
       tp.paint(canvas, Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
     }
 
-    // 7. Badge (top-right) — star for own, shield for enemy
-    const Offset badge = Offset(106, 22);
-    const double badgeR = 17.0;
-    canvas.drawCircle(badge, badgeR + 2,
-        Paint()
-          ..color = Colors.black.withOpacity(0.3)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
-    canvas.drawCircle(badge, badgeR,
-        Paint()..color = isMyZone ? const Color(0xFF1C1C2E) : accentColor);
-    canvas.drawCircle(
-      badge, badgeR,
-      Paint()
-        ..color = ringColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
-    );
-    final badgeIcon = isMyZone ? Icons.star_rounded : Icons.shield_rounded;
-    final badgeTp = TextPainter(textDirection: TextDirection.ltr)
-      ..text = TextSpan(
-        text: String.fromCharCode(badgeIcon.codePoint),
-        style: TextStyle(fontSize: 19, fontFamily: badgeIcon.fontFamily, color: ringColor),
-      )
-      ..layout();
-    badgeTp.paint(canvas, Offset(badge.dx - badgeTp.width / 2, badge.dy - badgeTp.height / 2));
-
-    // 8. Pin tail with gradient fade
+    // 7. Pin tail — circle bottom is at center.dy + outerR = 68
     final tailPath = Path()
-      ..moveTo(65, 156)
-      ..lineTo(46, 110)
-      ..lineTo(84, 110)
+      ..moveTo(40, 94)
+      ..lineTo(28, 68)
+      ..lineTo(52, 68)
       ..close();
     canvas.drawPath(
       tailPath,
       Paint()
         ..shader = ui.Gradient.linear(
-          const Offset(65, 110),
-          const Offset(65, 156),
+          const Offset(40, 68),
+          const Offset(40, 94),
           [ringColor, ringColor.withOpacity(0.0)],
         ),
     );
 
-    // 9. Crown for the locality's top Warlord — drawn last so it sits on top
+    // 8. Crown for the locality's top Warlord
     if (isCrown) {
       final crownTp = TextPainter(textDirection: TextDirection.ltr)
         ..text = const TextSpan(
           text: '👑',
-          style: TextStyle(fontSize: 30),
+          style: TextStyle(fontSize: 18),
         )
         ..layout();
       crownTp.paint(canvas, Offset(center.dx - crownTp.width / 2, -2));
@@ -217,119 +194,53 @@ class _MapScreenState extends State<MapScreen> {
     return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
   }
 
-  /// Generates a premium uncaptured-zone marker with a food icon.
-  Future<BitmapDescriptor> _generateUncapturedMarker({
-    required IconData iconData,
-  }) async {
+  /// Clean minimal green marker for uncaptured zones — no food icon, no badge.
+  /// Just the coloured pin so the map stays uncluttered.
+  Future<BitmapDescriptor> _generateUncapturedMarker() async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    const double W = 120.0;
-    const double H = 148.0;
-    const Offset center = Offset(60, 56);
-    const double outerR = 44.0;
-    const double innerR = 38.0;
+    // ~64 % of the previous 56×72 canvas
+    const double W = 36.0;
+    const double H = 46.0;
+    const Offset center = Offset(18, 18);
+    const double outerR = 17.0;
     const Color green = Color(0xFF00C853);
-    const Color greenBright = Color(0xFF69F0AE);
+    const Color greenLight = Color(0xFFB9F6CA);
 
-    // 1. Drop shadow
+    // 1. Soft drop-shadow
     canvas.drawCircle(
-      Offset(center.dx, center.dy + 5),
-      outerR,
+      Offset(center.dx, center.dy + 3),
+      outerR - 2,
       Paint()
-        ..color = Colors.black.withOpacity(0.35)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+        ..color = Colors.black.withOpacity(0.28)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
 
-    // 2. Green outer glow
-    canvas.drawCircle(
-      center,
-      outerR + 6,
-      Paint()
-        ..color = green.withOpacity(0.22)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
-    );
+    // 2. Outer green circle
+    canvas.drawCircle(center, outerR, Paint()..color = green);
 
-    // 3. White separator
-    canvas.drawCircle(center, outerR, Paint()..color = Colors.white.withOpacity(0.9));
-
-    // 4. Green ring
-    canvas.drawCircle(center, outerR - 3.5, Paint()..color = green);
-
-    // 5. Dark background with subtle radial gradient
-    canvas.drawCircle(
-      center,
-      innerR,
-      Paint()
-        ..shader = ui.Gradient.radial(
-          Offset(center.dx - 8, center.dy - 8),
-          innerR * 1.4,
-          [const Color(0xFF1A2E1A), const Color(0xFF061006)],
-          [0.0, 1.0],
-        ),
-    );
-
-    // 6. Subtle inner glow ring
-    canvas.drawCircle(
-      center,
-      innerR,
-      Paint()
-        ..color = green.withOpacity(0.18)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // 7. Food icon
-    final iconTp = TextPainter(textDirection: TextDirection.ltr)
-      ..text = TextSpan(
-        text: String.fromCharCode(iconData.codePoint),
-        style: TextStyle(
-          fontSize: 34,
-          fontFamily: iconData.fontFamily,
-          package: iconData.fontPackage,
-          color: greenBright,
-          shadows: [Shadow(color: green.withOpacity(0.8), blurRadius: 8)],
-        ),
-      )
-      ..layout();
-    iconTp.paint(canvas, Offset(center.dx - iconTp.width / 2, center.dy - iconTp.height / 2));
-
-    // 8. "!" raid badge (top-right)
-    const Offset badge = Offset(97, 20);
-    const double badgeR = 14.0;
-    canvas.drawCircle(badge, badgeR + 2,
+    // 3. White inner halo ring
+    canvas.drawCircle(center, outerR - 4,
         Paint()
-          ..color = Colors.black.withOpacity(0.25)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
-    canvas.drawCircle(badge, badgeR, Paint()..color = green);
-    canvas.drawCircle(badge, badgeR,
-        Paint()
-          ..color = Colors.white.withOpacity(0.9)
+          ..color = Colors.white
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2);
-    final bangTp = TextPainter(textDirection: TextDirection.ltr)
-      ..text = const TextSpan(
-        text: '!',
-        style: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w900,
-          color: Colors.white,
-        ),
-      )
-      ..layout();
-    bangTp.paint(canvas, Offset(badge.dx - bangTp.width / 2, badge.dy - bangTp.height / 2));
 
-    // 9. Pin tail with gradient
-    final tailPath = Path()
-      ..moveTo(60, 146)
-      ..lineTo(43, 100)
-      ..lineTo(77, 100)
+    // 4. Centre dot — circle bottom is at center.dy + outerR = 35
+    canvas.drawCircle(center, 4, Paint()..color = greenLight);
+
+    // 5. Pin tail
+    final tail = Path()
+      ..moveTo(18, 44)
+      ..lineTo(11, 35)
+      ..lineTo(25, 35)
       ..close();
     canvas.drawPath(
-      tailPath,
+      tail,
       Paint()
         ..shader = ui.Gradient.linear(
-          const Offset(60, 100),
-          const Offset(60, 146),
+          const Offset(18, 35),
+          const Offset(18, 44),
           [green, green.withOpacity(0.0)],
         ),
     );
@@ -344,8 +255,6 @@ class _MapScreenState extends State<MapScreen> {
     if (_isGeneratingMarkers) return;
     _isGeneratingMarkers = true;
 
-    // Capture context-dependent value BEFORE any async gap
-    final Color fallbackColor = AppColors.getPrimary(context);
     final Map<String, BitmapDescriptor> tempIcons = {};
 
     // Locality's top Warlord = the captured zone with the most total raids.
@@ -363,13 +272,21 @@ class _MapScreenState extends State<MapScreen> {
       try {
         if (zone.warlordId != null) {
           // ── CAPTURED marker ──────────────────────────────────────
-          Color accentColor = fallbackColor;
-          try {
-            final hex = zone.customColour.replaceAll('#', '');
-            accentColor = Color(int.parse('FF$hex', radix: 16));
-          } catch (_) {}
-
           final isMyZone = zone.warlordId == currentUserId;
+
+          // Task 3: enemy strongholds are always RED; the user's own zones
+          // default to YELLOW but honour the colour picked in customization.
+          Color accentColor;
+          if (isMyZone) {
+            accentColor = const Color(0xFFFFD700); // default yellow
+            try {
+              final hex = zone.customColour.replaceAll('#', '');
+              accentColor = Color(int.parse('FF$hex', radix: 16));
+            } catch (_) {}
+          } else {
+            accentColor = const Color(0xFFE53935); // enemy red
+          }
+
           final ownerInitial =
               (zone.warlordUsername ?? zone.warlordId ?? 'W')[0];
 
@@ -386,15 +303,8 @@ class _MapScreenState extends State<MapScreen> {
             isCrown: zone.id == topWarlordZoneId,
           );
         } else {
-          // ── UNCAPTURED / available marker ────────────────────────
-          final IconData icon = zone.customIcon == 'hamburger'
-              ? Icons.restaurant
-              : zone.customIcon == 'pizza'
-                  ? Icons.local_pizza
-                  : Icons.lunch_dining;
-
-          tempIcons[zone.id] =
-              await _generateUncapturedMarker(iconData: icon);
+          // ── UNCAPTURED — clean green pin, no food icon
+          tempIcons[zone.id] = await _generateUncapturedMarker();
         }
       } catch (_) {
         // Skip on canvas error — fallback pin will be used
@@ -418,6 +328,66 @@ class _MapScreenState extends State<MapScreen> {
     super.initState();
     _getUserLocation();
     context.read<MapBloc>().add(const LoadNearbyZonesRequested('te7u6b'));
+    // Check for a raid that was running when the app was killed.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _resumeRaidIfActive());
+  }
+
+  Future<void> _resumeRaidIfActive() async {
+    final raid = await SecureStorage().getActiveRaid();
+    if (raid == null || !mounted) return;
+
+    final raidId = raid['raidId'] as String;
+    final zoneId = raid['zoneId'] as String;
+    final zoneName = raid['zoneName'] as String? ?? 'Unknown Place';
+    final colour = raid['colour'] as String? ?? '#E53935';
+    final status = raid['status'] as String? ?? 'running';
+
+    if (status == 'awaiting_verification') {
+      // Timer finished before the app was killed — send straight to bill upload.
+      context.push('/bill-upload', extra: {
+        'raidId': raidId,
+        'zoneName': zoneName,
+        'colour': colour,
+      });
+      return;
+    }
+
+    // Timer was still running — calculate remaining seconds.
+    final startedAt = DateTime.tryParse(raid['startedAt'] as String? ?? '');
+    final durationMins = (raid['durationMins'] as num?)?.toInt() ?? 15;
+    if (startedAt == null) {
+      await SecureStorage().clearActiveRaid();
+      return;
+    }
+
+    final endTime = startedAt.add(Duration(minutes: durationMins));
+    final remaining = endTime.difference(DateTime.now()).inSeconds;
+
+    if (remaining > 0) {
+      // Resume the timer from where it left off.
+      if (!mounted) return;
+      context.read<RaidBloc>().add(RaidResumeRequested(
+            raidId: raidId,
+            zoneId: zoneId,
+            secondsRemaining: remaining,
+          ));
+      context.push('/raid-timer', extra: {
+        'zoneId': zoneId,
+        'zoneName': zoneName,
+        'colour': colour,
+        'userLat': _currentPosition?.latitude,
+        'userLng': _currentPosition?.longitude,
+      });
+    } else {
+      // Timer expired while app was killed — go to bill upload.
+      await SecureStorage().clearActiveRaid();
+      if (!mounted) return;
+      context.push('/bill-upload', extra: {
+        'raidId': raidId,
+        'zoneName': zoneName,
+        'colour': colour,
+      });
+    }
   }
 
   Future<void> _getUserLocation() async {
@@ -532,17 +502,31 @@ class _MapScreenState extends State<MapScreen> {
     _triggerHaptic();
     context.read<MapBloc>().add(SelectZoneRequested(zone));
 
+    // Distance between the raider and the zone — drives the geofence gate that
+    // only lets users raid/capture a place they are physically standing at.
+    final double? distanceMeters = _currentPosition == null
+        ? null
+        : Geolocator.distanceBetween(
+            _currentPosition!.latitude,
+            _currentPosition!.longitude,
+            zone.lat,
+            zone.lng,
+          );
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => ZoneDetailSheet(
         zone: zone,
+        distanceMeters: distanceMeters,
         onRaidStarted: () {
           context.push('/raid-timer', extra: {
             'zoneId': zone.id,
             'zoneName': zone.name,
             'colour': zone.customColour,
+            'userLat': _currentPosition?.latitude,
+            'userLng': _currentPosition?.longitude,
           });
         },
         onZoneUpdated: (updatedZone) {
@@ -599,6 +583,35 @@ class _MapScreenState extends State<MapScreen> {
   // MARKERS
   // ─────────────────────────────────────────────────────────────────
 
+  /// Snapchat-style soft halo drawn beneath the user's own zone markers.
+  /// Colour follows the self-marker colour (yellow by default, or the user's
+  /// chosen customization colour).
+  Set<Circle> _buildSelfGlowCircles(
+      List<ZoneEntity> zones, String? currentUserId) {
+    final circles = <Circle>{};
+    for (final zone in zones) {
+      final isMyZone =
+          zone.warlordId != null && zone.warlordId == currentUserId;
+      if (!isMyZone) continue;
+
+      Color glow = const Color(0xFFFFD700); // default yellow
+      try {
+        final hex = zone.customColour.replaceAll('#', '');
+        glow = Color(int.parse('FF$hex', radix: 16));
+      } catch (_) {}
+
+      circles.add(Circle(
+        circleId: CircleId('glow_${zone.id}'),
+        center: LatLng(zone.lat, zone.lng),
+        radius: 30, // metres — a gentle aura around the pin
+        fillColor: glow.withOpacity(0.16),
+        strokeColor: glow.withOpacity(0.40),
+        strokeWidth: 1,
+      ));
+    }
+    return circles;
+  }
+
   Set<Marker> _buildMarkers(List<ZoneEntity> zones, String? currentUserId) {
     return zones.map((zone) {
       final BitmapDescriptor? icon = _markerIcons[zone.id];
@@ -630,61 +643,119 @@ class _MapScreenState extends State<MapScreen> {
     return BlocConsumer<MapBloc, MapState>(
       listener: (context, state) {
         if (state is bloc_state.MapLoaded) {
-          // Regenerate all markers whenever zone list changes
           _isGeneratingMarkers = false;
           _generateAllMarkers(state.zones, currentUserId, currentUserAvatarUrl);
         }
       },
       builder: (context, state) {
-        if (state is MapLoading) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: AppColors.getPrimary(context)),
-                const SizedBox(height: 16),
-                Text('Loading nearby places...',
-                    style: AppTypography.caption.copyWith(
-                        color: AppColors.getOnSurfaceMuted(context))),
-              ],
-            ),
-          );
-        }
+        // Always render the GoogleMap — never replace it with a full-screen
+        // spinner or blank container. Zones/markers update in place once loaded.
+        final zones =
+            state is bloc_state.MapLoaded ? state.zones : <ZoneEntity>[];
+        final isLoading = state is MapLoading;
+        final hasError = state is MapFailure;
 
-        if (state is MapFailure) {
-          return Center(
-            child: Text(
-              'Could not load zones: ${state.message}',
-              style: TextStyle(color: AppColors.getError(context)),
+        return Stack(
+          children: [
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: _currentPosition ?? const LatLng(26.9124, 75.7873),
+                zoom: 14.5,
+              ),
+              markers: _buildMarkers(zones, currentUserId),
+              circles: _buildSelfGlowCircles(zones, currentUserId),
+              mapType: MapType.normal,
+              myLocationEnabled: _isLocationPermissionGranted,
+              myLocationButtonEnabled: true,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              compassEnabled: true,
+              onMapCreated: (GoogleMapController controller) {
+                _mapController = controller;
+                if (_currentPosition != null) {
+                  controller.animateCamera(CameraUpdate.newCameraPosition(
+                    CameraPosition(target: _currentPosition!, zoom: 15.5),
+                  ));
+                }
+              },
             ),
-          );
-        }
 
-        if (state is bloc_state.MapLoaded) {
-          return GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: _currentPosition ?? const LatLng(26.9124, 75.7873),
-              zoom: 14.5,
-            ),
-            markers: _buildMarkers(state.zones, currentUserId),
-            mapType: MapType.normal,
-            myLocationEnabled: _isLocationPermissionGranted,
-            myLocationButtonEnabled: true,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
-            compassEnabled: true,
-            onMapCreated: (GoogleMapController controller) {
-              _mapController = controller;
-              if (_currentPosition != null) {
-                controller.animateCamera(CameraUpdate.newCameraPosition(
-                  CameraPosition(target: _currentPosition!, zoom: 15.5),
-                ));
-              }
-            },
-          );
-        }
+            // Small floating pill — only shown while zones are loading
+            if (isLoading)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 72,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.getSurface(context),
+                      borderRadius: BorderRadius.circular(100),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.12),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 13,
+                          height: 13,
+                          child: CircularProgressIndicator(
+                            color: AppColors.getPrimary(context),
+                            strokeWidth: 2,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Finding zones…',
+                          style: AppTypography.caption.copyWith(
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
 
-        return Container();
+            // Slim error banner — stays below the header
+            if (hasError)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 72,
+                left: 16,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.getError(context).withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.wifi_off_rounded,
+                          color: Colors.white, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Could not load zones — showing cached data',
+                          style: AppTypography.caption.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
       },
     );
   }

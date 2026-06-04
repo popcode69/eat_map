@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/cache/secure_storage.dart';
 import '../../domain/usecases/start_raid.dart';
 import '../../domain/usecases/verify_raid.dart';
 import '../../../../injection_container.dart' as di;
@@ -19,6 +20,8 @@ sealed class RaidEvent extends Equatable {
 
 final class RaidStartRequested extends RaidEvent {
   final String zoneId;
+  final String zoneName;
+  final String colour;
   final double lat;
   final double lng;
   final String deviceId;
@@ -27,6 +30,8 @@ final class RaidStartRequested extends RaidEvent {
 
   const RaidStartRequested({
     required this.zoneId,
+    required this.zoneName,
+    required this.colour,
     required this.lat,
     required this.lng,
     required this.deviceId,
@@ -35,7 +40,24 @@ final class RaidStartRequested extends RaidEvent {
   });
 
   @override
-  List<Object?> get props => [zoneId, lat, lng, deviceId, userId, username];
+  List<Object?> get props => [zoneId, zoneName, colour, lat, lng, deviceId, userId, username];
+}
+
+/// Restores a previously persisted raid after the app was killed.
+/// Dispatched from [MapScreen] when an active raid is found in storage.
+final class RaidResumeRequested extends RaidEvent {
+  final String raidId;
+  final String zoneId;
+  final int secondsRemaining;
+
+  const RaidResumeRequested({
+    required this.raidId,
+    required this.zoneId,
+    required this.secondsRemaining,
+  });
+
+  @override
+  List<Object?> get props => [raidId, zoneId, secondsRemaining];
 }
 
 final class RaidVerificationSubmitted extends RaidEvent {
@@ -110,6 +132,18 @@ final class RaidSuccess extends RaidState {
   List<Object?> get props => [points, rank, isWarlord];
 }
 
+/// Timer reached zero naturally — the user stayed the required time.
+/// The screen should navigate to bill verification.
+final class RaidTimerCompleted extends RaidState {
+  final String raidId;
+  final String zoneId;
+
+  const RaidTimerCompleted({required this.raidId, required this.zoneId});
+
+  @override
+  List<Object?> get props => [raidId, zoneId];
+}
+
 final class RaidFailure extends RaidState {
   final String message;
 
@@ -125,6 +159,7 @@ final class RaidFailure extends RaidState {
 class RaidBloc extends Bloc<RaidEvent, RaidState> {
   final StartRaid _startRaid;
   final VerifyRaid _verifyRaid;
+  final SecureStorage _secureStorage;
   StreamSubscription<int>? _timerSubscription;
   String? _currentUserId;
   String? _currentUsername;
@@ -132,10 +167,13 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
   RaidBloc({
     required StartRaid startRaid,
     required VerifyRaid verifyRaid,
+    required SecureStorage secureStorage,
   })  : _startRaid = startRaid,
         _verifyRaid = verifyRaid,
+        _secureStorage = secureStorage,
         super(RaidInitial()) {
     on<RaidStartRequested>(_onStartRequested);
+    on<RaidResumeRequested>(_onResumeRequested);
     on<RaidVerificationSubmitted>(_onVerificationSubmitted);
     on<RaidTimerTicked>(_onTimerTicked);
   }
@@ -157,42 +195,82 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
       deviceId: event.deviceId,
     );
 
-    result.fold(
-      (failure) => emit(RaidFailure(failure.message)),
-      (raid) {
-        final targetEndTime = raid.startedAt.add(Duration(minutes: raid.durationMins));
-        final initialSecondsRemaining = targetEndTime.difference(DateTime.now()).inSeconds;
+    await result.fold<Future<void>>(
+      (failure) async => emit(RaidFailure(failure.message)),
+      (raid) async {
+        // Persist raid so it survives app kills
+        await _secureStorage.saveActiveRaid({
+          'raidId': raid.id,
+          'zoneId': raid.zoneId,
+          'zoneName': event.zoneName,
+          'colour': event.colour,
+          'startedAt': raid.startedAt.toIso8601String(),
+          'durationMins': raid.durationMins,
+          'status': 'running',
+        });
+
+        final targetEndTime =
+            raid.startedAt.add(Duration(minutes: raid.durationMins));
+        final initialSecondsRemaining =
+            targetEndTime.difference(DateTime.now()).inSeconds;
 
         emit(RaidTimerActive(
           raidId: raid.id,
           zoneId: raid.zoneId,
           secondsRemaining: initialSecondsRemaining > 0 ? initialSecondsRemaining : 0,
         ));
-        
-        // Start background-resilient periodic check based on actual system clock difference
+
         _timerSubscription = Stream.periodic(
           const Duration(seconds: 1),
           (_) {
-            final now = DateTime.now();
-            final difference = targetEndTime.difference(now).inSeconds;
+            final difference = targetEndTime.difference(DateTime.now()).inSeconds;
             return difference > 0 ? difference : 0;
           },
-        ).listen((seconds) {
-          add(RaidTimerTicked(seconds));
-        });
+        ).listen((seconds) => add(RaidTimerTicked(seconds)));
       },
     );
   }
 
-  void _onTimerTicked(
+  Future<void> _onResumeRequested(
+    RaidResumeRequested event,
+    Emitter<RaidState> emit,
+  ) async {
+    _timerSubscription?.cancel();
+
+    emit(RaidTimerActive(
+      raidId: event.raidId,
+      zoneId: event.zoneId,
+      secondsRemaining: event.secondsRemaining,
+    ));
+
+    final targetEndTime =
+        DateTime.now().add(Duration(seconds: event.secondsRemaining));
+
+    _timerSubscription = Stream.periodic(
+      const Duration(seconds: 1),
+      (_) {
+        final difference = targetEndTime.difference(DateTime.now()).inSeconds;
+        return difference > 0 ? difference : 0;
+      },
+    ).listen((seconds) => add(RaidTimerTicked(seconds)));
+  }
+
+  Future<void> _onTimerTicked(
     RaidTimerTicked event,
     Emitter<RaidState> emit,
-  ) {
+  ) async {
     if (state is RaidTimerActive) {
       final current = state as RaidTimerActive;
       if (event.secondsRemaining <= 0) {
         _timerSubscription?.cancel();
-        emit(const RaidFailure('Raid timer expired! Please start a new raid.'));
+        // Update persisted status so the bill-upload screen can be resumed
+        // if the user closes the app between timer completion and verification.
+        final saved = await _secureStorage.getActiveRaid();
+        if (saved != null) {
+          saved['status'] = 'awaiting_verification';
+          await _secureStorage.saveActiveRaid(saved);
+        }
+        emit(RaidTimerCompleted(raidId: current.raidId, zoneId: current.zoneId));
       } else {
         emit(RaidTimerActive(
           raidId: current.raidId,
@@ -207,9 +285,13 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
     RaidVerificationSubmitted event,
     Emitter<RaidState> emit,
   ) async {
+    // zoneId is needed to update the local mock after a successful capture.
+    // It lives in both the active and completed timer states.
     String? zoneId;
     if (state is RaidTimerActive) {
       zoneId = (state as RaidTimerActive).zoneId;
+    } else if (state is RaidTimerCompleted) {
+      zoneId = (state as RaidTimerCompleted).zoneId;
     }
 
     _timerSubscription?.cancel();
@@ -221,6 +303,10 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
       upiRef: event.upiRef,
       billPhotoPath: event.billPhotoPath,
     );
+
+    // Clear persisted raid regardless of outcome — the user has attempted
+    // verification so there's no need to resume this raid again.
+    await _secureStorage.clearActiveRaid();
 
     result.fold(
       (failure) => emit(RaidFailure(failure.message)),

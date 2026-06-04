@@ -21,10 +21,16 @@ class ZoneModel extends ZoneEntity {
   });
 
   factory ZoneModel.fromJson(Map<String, dynamic> json) {
-    final id = (json['id'] as String?) ?? '';
+    final placeId = (json['place_id'] as String?) ?? '';
+    final backendId = (json['id'] as String?) ?? '';
+    // The backend sometimes returns identical placeholder UUIDs for every zone
+    // (e.g. "temp-zone-uuid-mock-pla"). place_id is the canonical Google Places
+    // unique identifier and is always unique per venue, so prefer it as the
+    // entity key. This prevents marker collisions on the map.
+    final id = placeId.isNotEmpty ? placeId : backendId;
     return ZoneModel(
       id: id,
-      placeId: (json['place_id'] as String?) ?? id,
+      placeId: id,
       name: (json['name'] as String?) ?? 'Unknown Place',
       lat: (json['lat'] as num?)?.toDouble() ?? 0.0,
       lng: (json['lng'] as num?)?.toDouble() ?? 0.0,

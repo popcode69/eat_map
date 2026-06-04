@@ -8,7 +8,8 @@ class GetCityLeaderboard {
 
   const GetCityLeaderboard(this.repository);
 
-  Future<Either<Failure, List<LeaderboardUserEntity>>> call(String scope) async {
-    return await repository.getLeaderboard(scope);
+  Future<Either<Failure, List<LeaderboardUserEntity>>> call(
+      String scope, {String? city}) async {
+    return await repository.getLeaderboard(scope, city: city);
   }
 }

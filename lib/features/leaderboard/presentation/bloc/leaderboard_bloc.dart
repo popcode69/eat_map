@@ -18,7 +18,7 @@ class LeaderboardBloc extends Bloc<LeaderboardEvent, LeaderboardState> {
   ) async {
     emit(LeaderboardLoading());
 
-    final result = await getCityLeaderboard(event.scope);
+    final result = await getCityLeaderboard(event.scope, city: event.city);
 
     result.fold(
       (failure) => emit(LeaderboardError(failure.message)),

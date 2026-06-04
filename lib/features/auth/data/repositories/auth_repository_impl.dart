@@ -205,7 +205,7 @@ class AuthRepositoryImpl implements AuthRepository {
       supabaseUid: '8d7fcdbb-2b81-4202-a8c6-b37119ff0856',
       username: 'street_raider_mock',
       displayName: 'Raider Champion',
-      avatarUrl: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=raider',
+      avatarUrl: 'https://api.dicebear.com/7.x/pixel-art/png?seed=raider',
       city: 'Mumbai',
       trustScore: 100,
       level: 5,

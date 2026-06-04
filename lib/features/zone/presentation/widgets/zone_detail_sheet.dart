@@ -9,16 +9,25 @@ import '../../domain/entities/zone_entity.dart';
 import '../../domain/usecases/customize_zone.dart';
 import '../../../../injection_container.dart' as di;
 
+/// Max distance (metres) a raider may be from a zone to raid/capture it.
+/// Matches the PRD §5.2 GPS geofence (within 50m).
+const double kRaidRadiusMeters = 50;
+
 class ZoneDetailSheet extends StatefulWidget {
   final ZoneEntity zone;
   final VoidCallback? onRaidStarted;
   final Function(ZoneEntity)? onZoneUpdated;
+
+  /// Distance in metres from the user to this zone. `null` means location is
+  /// unknown. Raid/capture is only allowed within [kRaidRadiusMeters].
+  final double? distanceMeters;
 
   const ZoneDetailSheet({
     super.key,
     required this.zone,
     this.onRaidStarted,
     this.onZoneUpdated,
+    this.distanceMeters,
   });
 
   @override
@@ -52,6 +61,11 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
     HapticFeedback.lightImpact();
   }
 
+  /// True only when the user is physically within the raid geofence.
+  bool get _inRange =>
+      widget.distanceMeters != null &&
+      widget.distanceMeters! <= kRaidRadiusMeters;
+
   Future<void> _saveCustomization() async {
     _triggerHaptic();
     final customizer = di.sl<CustomizeZone>();
@@ -80,7 +94,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
         widget.onZoneUpdated?.call(updatedZone);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Stronghold customized successfully! 🛡️'),
+            content: const Text('Place customized successfully! ✨'),
             backgroundColor: AppColors.successLight,
           ),
         );
@@ -92,7 +106,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
   Widget build(BuildContext context) {
     final authState = context.read<AuthBloc>().state;
     final String? currentUserId = authState is Authenticated ? authState.user.id : null;
-    final bool isWarlord = _currentZone.warlordId == currentUserId;
+    final bool isChampion = _currentZone.warlordId == currentUserId; // true = current user is the top diner here
 
     // Convert hex string to Flutter Color
     Color themeColor = AppColors.getPrimary(context);
@@ -111,13 +125,13 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
       child: AnimatedCrossFade(
         duration: const Duration(milliseconds: 300),
         crossFadeState: _isEditing ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-        firstChild: _buildDetailView(isWarlord, themeColor),
+        firstChild: _buildDetailView(isChampion, themeColor),
         secondChild: _buildCustomizeView(themeColor),
       ),
     );
   }
 
-  Widget _buildDetailView(bool isWarlord, Color themeColor) {
+  Widget _buildDetailView(bool isChampion, Color themeColor) {
     final authState = context.read<AuthBloc>().state;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -154,7 +168,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
                       Icon(Icons.stars, color: themeColor, size: 16),
                       const SizedBox(width: 4),
                       Text(
-                        _currentZone.customTitle ?? 'Unclaimed Stronghold',
+                        _currentZone.customTitle ?? 'Unclaimed Spot',
                         style: AppTypography.caption.copyWith(
                           color: themeColor,
                           fontWeight: FontWeight.bold,
@@ -167,7 +181,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
             ),
             
             // Edit Customization Icon
-            if (isWarlord)
+            if (isChampion)
               IconButton(
                 icon: Icon(Icons.palette_outlined, color: themeColor),
                 onPressed: () {
@@ -208,12 +222,12 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
                         width: 48,
                         height: 48,
                         decoration: BoxDecoration(
-                          color: isWarlord
+                          color: isChampion
                               ? AppColors.getSuccess(context).withAlpha(30)
                               : themeColor.withAlpha(20),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: isWarlord ? AppColors.getSuccess(context) : themeColor,
+                            color: isChampion ? AppColors.getSuccess(context) : themeColor,
                             width: 2.0,
                           ),
                         ),
@@ -225,7 +239,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
                               fontFamily: AppTypography.headingFont,
                               fontWeight: FontWeight.bold,
                               fontSize: 20,
-                              color: isWarlord ? AppColors.getSuccess(context) : themeColor,
+                              color: isChampion ? AppColors.getSuccess(context) : themeColor,
                             ),
                           ),
                         ),
@@ -237,14 +251,14 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
                     children: [
                       Text(
                         _currentZone.warlordId == null
-                            ? 'UNCLAIMED TERRITORY ⚔️'
-                            : isWarlord
-                                ? 'YOUR STRONGHOLD 👑'
-                                : 'ENEMY TERRITORY 🛡️',
+                            ? 'UNCLAIMED SPOT 🍽️'
+                            : isChampion
+                                ? 'YOUR PLACE 👑'
+                                : 'CLAIMED BY SOMEONE 🏆',
                         style: AppTypography.caption.copyWith(
                           color: _currentZone.warlordId == null
                               ? AppColors.getOnSurfaceMuted(context)
-                              : isWarlord
+                              : isChampion
                                   ? AppColors.getSuccess(context)
                                   : themeColor,
                           fontWeight: FontWeight.bold,
@@ -255,12 +269,12 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
                       const SizedBox(height: 2),
                       Text(
                         _currentZone.warlordId == null
-                            ? 'Claim to become Warlord!'
-                            : isWarlord
+                            ? 'Be the first to dine here!'
+                            : isChampion
                                 ? (authState is Authenticated
                                     ? (authState.user.displayName ?? authState.user.username)
                                     : 'YOU')
-                                : (_currentZone.warlordUsername ?? 'Unknown Warlord'),
+                                : (_currentZone.warlordUsername ?? 'Food Champion'),
                         style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.bold),
                       ),
                       if (_currentZone.warlordId != null) ...
@@ -288,14 +302,14 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
           children: [
             Expanded(
               child: _buildStatItem(
-                '⚔️ Total Raids',
-                _currentZone.totalRaids == 0 ? 'Never raided' : '${_currentZone.totalRaids} attacks',
+                '🍽️ Total Visits',
+                _currentZone.totalRaids == 0 ? 'Never visited' : '${_currentZone.totalRaids} visits',
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: _buildStatItem(
-                '🛡️ Owner Visits',
+                '👑 Champion Visits',
                 _currentZone.warlordRaids == 0 ? 'Unclaimed' : '${_currentZone.warlordRaids} visits',
               ),
             ),
@@ -304,61 +318,146 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
 
         const SizedBox(height: 32),
 
-        // CTA RAID Button — text changes based on ownership state
-        ElevatedButton(
-          onPressed: () {
-            _triggerHaptic();
-            Navigator.pop(context);
-            widget.onRaidStarted?.call();
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: themeColor,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            minimumSize: const Size(double.infinity, 56),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16.0),
-            ),
-          ),
-          child: Text(
-            isWarlord
-                ? '🛡️ YOUR TERRITORY'
-                : _currentZone.warlordId == null
-                    ? '⚔️ BE THE FIRST TO RAID!'
-                    : '⚔️ CHALLENGE WARLORD',
-            style: const TextStyle(
-              fontFamily: AppTypography.headingFont,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-
-        if (isWarlord) ...[
-          const SizedBox(height: 12),
-          OutlinedButton(
+        // Geofence gate: raiding/capturing is only available when the user is
+        // physically standing within range of the zone.
+        if (_inRange) ...[
+          // CTA RAID Button — text changes based on ownership state
+          ElevatedButton(
             onPressed: () {
               _triggerHaptic();
               Navigator.pop(context);
               widget.onRaidStarted?.call();
             },
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 48),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              side: BorderSide(color: themeColor, width: 1.5),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: themeColor,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              minimumSize: const Size(double.infinity, 56),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16.0),
+              ),
             ),
             child: Text(
-              '⚔️ DEFEND & RE-RAID',
-              style: TextStyle(
-                color: themeColor,
+              isChampion
+                  ? '✅ YOUR PLACE'
+                  : _currentZone.warlordId == null
+                      ? '🍽️ BE THE FIRST TO CLAIM!'
+                      : '🍴 CLAIM THIS SPOT',
+              style: const TextStyle(
                 fontFamily: AppTypography.headingFont,
                 fontWeight: FontWeight.bold,
+                fontSize: 16,
+                letterSpacing: 0.5,
               ),
             ),
           ),
-        ],
+          if (isChampion) ...[
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: () {
+                _triggerHaptic();
+                Navigator.pop(context);
+                widget.onRaidStarted?.call();
+              },
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                side: BorderSide(color: themeColor, width: 1.5),
+              ),
+              child: Text(
+                '🔄 DINE AGAIN',
+                style: TextStyle(
+                  color: themeColor,
+                  fontFamily: AppTypography.headingFont,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ] else
+          _buildProximityLock(),
       ],
+    );
+  }
+
+  /// Shown when the user is not physically present at the venue.
+  /// No distance numbers — the message focuses on being AT the place.
+  Widget _buildProximityLock() {
+    final muted = AppColors.getOnSurfaceMuted(context);
+    final bool noGps = widget.distanceMeters == null;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.getSurfaceVariant(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.getBorder(context), width: 1.2),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.getPrimary(context).withAlpha(20),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  noGps
+                      ? Icons.location_disabled_rounded
+                      : Icons.restaurant_rounded,
+                  color: AppColors.getPrimary(context),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      noGps
+                          ? 'Location access needed'
+                          : 'You must be at this place',
+                      style: AppTypography.bodyLarge
+                          .copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      noGps
+                          ? 'Allow location so we can confirm you are dining at ${_currentZone.name}.'
+                          : 'To check in, you need to actually visit and dine at ${_currentZone.name}. Open the app once you\'re there!',
+                      style: AppTypography.caption.copyWith(color: muted),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ElevatedButton.icon(
+            onPressed: null,
+            icon: const Icon(Icons.lock_outline_rounded, size: 18),
+            label: Text(
+              noGps ? 'ENABLE LOCATION' : 'VISIT TO CHECK IN',
+              style: const TextStyle(
+                fontFamily: AppTypography.headingFont,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              disabledBackgroundColor: AppColors.getBorder(context),
+              disabledForegroundColor: muted,
+              minimumSize: const Size(double.infinity, 52),
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -382,7 +481,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
   }
 
   Widget _buildCustomizeView(Color themeColor) {
-    final colours = ['#E53935', '#EF5350', '#4CAF50', '#2196F3', '#FF9800', '#9C27B0'];
+    final colours = ['#FFD700', '#E53935', '#EF5350', '#4CAF50', '#2196F3', '#FF9800', '#9C27B0'];
     final icons = ['fork', 'hamburger', 'pizza'];
 
     return Column(
@@ -390,7 +489,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Customize Stronghold',
+          'Customize This Place',
           style: AppTypography.titleLarge.copyWith(color: themeColor),
         ),
         const SizedBox(height: 16),
@@ -457,7 +556,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
         const SizedBox(height: 16),
 
         // Icon Picker Row
-        Text('Stronghold Icon', style: AppTypography.labelLarge),
+        Text('Place Icon', style: AppTypography.labelLarge),
         const SizedBox(height: 8),
         Row(
           children: icons.map((iconSlug) {
@@ -520,7 +619,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Save 🛡️', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: const Text('Save ✨', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
           ],

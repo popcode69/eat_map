@@ -4,8 +4,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_modals.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../auth/presentation/bloc/auth_event.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
+import '../../../map/presentation/bloc/map_bloc.dart';
 import '../bloc/raid_bloc.dart';
 import '../bloc/raid_bloc.dart' as bloc_state;
 
@@ -13,12 +16,16 @@ class RaidTimerScreen extends StatefulWidget {
   final String zoneId;
   final String zoneName;
   final String colour;
+  final double? userLat;
+  final double? userLng;
 
   const RaidTimerScreen({
     super.key,
     required this.zoneId,
     required this.zoneName,
     required this.colour,
+    this.userLat,
+    this.userLng,
   });
 
   @override
@@ -36,11 +43,19 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
         ? (authState.user.displayName ?? authState.user.username)
         : 'Raider';
 
-    // Dispatch active start request on screen mount
+    // If the bloc already has an active timer (resumed from storage), do not
+    // start a new raid — just let the existing state drive the UI.
+    final currentState = context.read<RaidBloc>().state;
+    if (currentState is RaidTimerActive || currentState is RaidTimerCompleted) {
+      return;
+    }
+
     context.read<RaidBloc>().add(RaidStartRequested(
           zoneId: widget.zoneId,
-          lat: 19.0760,
-          lng: 72.8777,
+          zoneName: widget.zoneName,
+          colour: widget.colour,
+          lat: widget.userLat ?? 0.0,
+          lng: widget.userLng ?? 0.0,
           deviceId: 'local_device_fingerprint',
           userId: userId,
           username: username,
@@ -75,9 +90,31 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
       ),
       body: BlocConsumer<RaidBloc, RaidState>(
         listener: (context, state) {
-          if (state is RaidFailure) {
+          if (state is bloc_state.RaidTimerCompleted) {
+            // Timer completed → auto-verify immediately, no bill required.
+            HapticFeedback.heavyImpact();
+            context.read<RaidBloc>().add(RaidVerificationSubmitted(
+                  raidId: state.raidId,
+                  spendAmount: 0,
+                ));
+          } else if (state is bloc_state.RaidSuccess) {
+            AppModals.raidResult(
+              context,
+              points: state.points,
+              rank: state.rank,
+              isWarlord: state.isWarlord,
+              zoneName: widget.zoneName,
+            ).then((_) {
+              if (!context.mounted) return;
+              context.read<AuthBloc>().add(AuthCheckRequested());
+              context.read<MapBloc>().add(const LoadNearbyZonesRequested('te7u6b'));
+              context.go('/home');
+            });
+          } else if (state is RaidFailure) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.message), backgroundColor: AppColors.getError(context)),
+              SnackBar(
+                  content: Text(state.message),
+                  backgroundColor: AppColors.getError(context)),
             );
             context.go('/home');
           }
@@ -86,6 +123,26 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
           if (state is RaidLoading) {
             return Center(
               child: CircularProgressIndicator(color: themeColor),
+            );
+          }
+
+          // Timer completed or verifying — show spinner while auto-verify runs.
+          if (state is bloc_state.RaidTimerCompleted ||
+              state is bloc_state.RaidVerifying) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: themeColor, strokeWidth: 3),
+                  const SizedBox(height: 24),
+                  Text(
+                    "Time's up! Verifying your visit…",
+                    style: AppTypography.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             );
           }
 
@@ -165,12 +222,12 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
                         child: Column(
                           children: [
                             Text(
-                              'Verification Required',
+                              'Skip Timer — Upload Bill',
                               style: AppTypography.titleLarge,
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Submit proof of checkout to complete the raid and credit earnings.',
+                              'Have a receipt or UPI ref? Upload it now to verify instantly without waiting.',
                               style: AppTypography.caption.copyWith(color: AppColors.getOnSurfaceMuted(context)),
                               textAlign: TextAlign.center,
                             ),
@@ -201,7 +258,7 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
                                   Icon(Icons.receipt_long, color: Colors.white),
                                   SizedBox(width: 10),
                                   Text(
-                                    'VERIFY & SUBMIT BILL',
+                                    'UPLOAD BILL TO VERIFY NOW',
                                     style: TextStyle(
                                       fontFamily: AppTypography.headingFont,
                                       fontWeight: FontWeight.bold,

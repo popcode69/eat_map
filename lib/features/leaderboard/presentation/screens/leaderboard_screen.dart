@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../auth/presentation/bloc/auth_state.dart';
 import '../bloc/leaderboard_bloc.dart';
 import '../bloc/leaderboard_event.dart';
 import '../bloc/leaderboard_state.dart';
@@ -23,8 +25,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_handleTabSelection);
 
-    // Initial load: City Rankings
-    context.read<LeaderboardBloc>().add(const LoadLeaderboardRequested('city'));
+    // Initial load: City Rankings (pass user's city so the backend filters correctly)
+    final authState = context.read<AuthBloc>().state;
+    final city = authState is Authenticated ? authState.user.city : null;
+    context.read<LeaderboardBloc>().add(LoadLeaderboardRequested('city', city: city));
   }
 
   @override
@@ -38,9 +42,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     if (_tabController.indexIsChanging) {
       HapticFeedback.lightImpact();
       final scopes = ['city', 'global', 'squad'];
-      context.read<LeaderboardBloc>().add(
-            LoadLeaderboardRequested(scopes[_tabController.index]),
-          );
+      final scope = scopes[_tabController.index];
+      // Pass city only for the city tab
+      String? city;
+      if (scope == 'city') {
+        final authState = context.read<AuthBloc>().state;
+        city = authState is Authenticated ? authState.user.city : null;
+      }
+      context.read<LeaderboardBloc>().add(LoadLeaderboardRequested(scope, city: city));
     }
   }
 

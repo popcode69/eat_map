@@ -118,6 +118,7 @@ Future<void> init() async {
   sl.registerFactory<RaidBloc>(() => RaidBloc(
         startRaid: sl<StartRaid>(),
         verifyRaid: sl<VerifyRaid>(),
+        secureStorage: sl<SecureStorage>(),
       ));
 
   // ==========================================

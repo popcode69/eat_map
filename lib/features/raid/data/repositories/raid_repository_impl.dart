@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
@@ -34,9 +35,31 @@ class RaidRepositoryImpl implements RaidRepository {
       final raid = _mapJsonToRaid(response.data as Map<String, dynamic>, zoneId, deviceId, lat, lng);
       return Right(raid);
     } on DioException catch (e) {
-      // Developer Offline Fallback: Start mock raid immediately
-      if (e.type == DioExceptionType.connectionError || e.type == DioExceptionType.connectionTimeout) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.unknown) {
         return Right(_getMockRaid(zoneId, deviceId, lat, lng));
+      }
+      final body = e.response?.data;
+      if (body is Map<String, dynamic>) {
+        final nested = body['error'];
+        final detail = body['detail'];
+        String? msg;
+        if (nested is Map<String, dynamic>) {
+          msg = nested['message']?.toString();
+        } else if (detail is List && detail.isNotEmpty) {
+          final first = detail.first;
+          if (first is Map<String, dynamic>) {
+            final field = (first['loc'] as List?)?.last?.toString() ?? '';
+            final reason = first['msg']?.toString() ?? '';
+            msg = field.isNotEmpty ? '$field: $reason' : reason;
+          }
+        } else if (detail is String) {
+          msg = detail;
+        }
+        if (msg != null && msg.isNotEmpty) {
+          return Left(DomainFailure(msg));
+        }
       }
       return Left(ErrorHandler.handle(e.error ?? e));
     } catch (e) {
@@ -52,40 +75,83 @@ class RaidRepositoryImpl implements RaidRepository {
     String? billPhotoPath,
   }) async {
     try {
-      // Build form-data for optimized multipart upload (as recommended!)
-      final Map<String, dynamic> data = {
-        'spend_amount': spendAmount,
-      };
+      // Backend expects JSON (not multipart):
+      // { verification_type, upi_ref?, bill_photo_base64?, spend_amount_paise }
+      final bool hasUpi = upiRef != null && upiRef.isNotEmpty;
 
-      if (upiRef != null && upiRef.isNotEmpty) {
-        data['upi_ref'] = upiRef;
-      }
-
+      // Convert bill photo to base64 if a real file path was provided
+      String? billPhotoBase64;
       if (billPhotoPath != null && billPhotoPath.isNotEmpty) {
         final file = File(billPhotoPath);
         if (await file.exists()) {
-          data['bill_photo'] = await MultipartFile.fromFile(
-            file.path,
-            filename: file.path.split('/').last,
-          );
+          final bytes = await file.readAsBytes();
+          billPhotoBase64 = base64Encode(bytes);
         }
       }
 
+      // Determine verification method:
+      //   "upi"        — user supplied a UPI transaction reference
+      //   "bill_photo" — user uploaded a receipt photo
+      //   "timer"      — user completed the required stay (no bill needed)
+      String verificationType;
+      if (hasUpi) {
+        verificationType = 'upi';
+      } else if (billPhotoBase64 != null) {
+        verificationType = 'bill_photo';
+      } else {
+        verificationType = 'timer';
+      }
+
+      final Map<String, dynamic> data = {
+        'verification_type': verificationType,
+        'spend_amount': spendAmount, // backend expects rupees as a float
+      };
+      if (hasUpi) data['upi_ref'] = upiRef;
+      if (billPhotoBase64 != null) data['bill_photo_base64'] = billPhotoBase64;
+
       final response = await _dioClient.dio.post(
         ApiEndpoints.verifyRaid(raidId),
-        data: FormData.fromMap(data),
+        data: data, // JSON body
       );
 
       return Right(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
-      // Developer Offline Fallback: Return successful mock takeover details!
-      if (e.type == DioExceptionType.connectionError || e.type == DioExceptionType.connectionTimeout) {
+      // No network → return mock success so dev flow completes.
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.unknown) {
         return const Right({
           'points': 25.0,
           'rank': 1,
           'is_warlord': true,
         });
       }
+
+      // Surface the backend's own error message. Two known formats:
+      //   { "error": { "code": "...", "message": "..." } }
+      //   { "detail": [ { "msg": "...", "loc": [...] } ] }  ← Pydantic validation
+      final body = e.response?.data;
+      if (body is Map<String, dynamic>) {
+        final nested = body['error'];
+        final detail = body['detail'];
+        String? msg;
+        if (nested is Map<String, dynamic>) {
+          msg = nested['message']?.toString();
+        } else if (detail is List && detail.isNotEmpty) {
+          final first = detail.first;
+          if (first is Map<String, dynamic>) {
+            final field = (first['loc'] as List?)?.last?.toString() ?? '';
+            final reason = first['msg']?.toString() ?? '';
+            msg = field.isNotEmpty ? '$field: $reason' : reason;
+          }
+        } else if (detail is String) {
+          msg = detail;
+        }
+        if (msg != null && msg.isNotEmpty) {
+          return Left(DomainFailure(msg));
+        }
+      }
+
       return Left(ErrorHandler.handle(e.error ?? e));
     } catch (e) {
       return Left(ErrorHandler.handle(e));
@@ -98,7 +164,7 @@ class RaidRepositoryImpl implements RaidRepository {
       userId: 'd3b07384-d113-4ec5-a55d-3d4c6d6c6e7f',
       zoneId: zoneId,
       startedAt: DateTime.now(),
-      durationMins: 2,
+      durationMins: 15,
       spendAmount: 0.0,
       pointsEarned: 0.0,
       earnRate: 1.0,
@@ -116,7 +182,7 @@ class RaidRepositoryImpl implements RaidRepository {
       userId: 'd3b07384-d113-4ec5-a55d-3d4c6d6c6e7f',
       zoneId: zoneId,
       startedAt: DateTime.now(),
-      durationMins: 2,
+      durationMins: 15,
       spendAmount: 0.0,
       pointsEarned: 0.0,
       earnRate: 1.0,

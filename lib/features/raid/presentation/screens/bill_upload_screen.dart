@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_modals.dart';
@@ -46,20 +47,34 @@ class _BillUploadScreenState extends State<BillUploadScreen> {
     HapticFeedback.lightImpact();
   }
 
-  void _selectMockBill() {
+  Future<void> _pickBill() async {
     _triggerHaptic();
-    // Simulate camera capture and local compression (§9)
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 72,
+      maxWidth: 1200,
+    );
+    if (picked == null || !mounted) return;
     setState(() {
-      _billPhotoPath = 'mock_path/compressed_bill_image.jpg';
+      _billPhotoPath = picked.path;
       _isPhotoSelected = true;
     });
+  }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Camera captured: Image compressed successfully by 72%! 📸'),
-        backgroundColor: AppColors.getSuccess(context),
-      ),
+  Future<void> _pickBillFromGallery() async {
+    _triggerHaptic();
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 72,
+      maxWidth: 1200,
     );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _billPhotoPath = picked.path;
+      _isPhotoSelected = true;
+    });
   }
 
   void _onSubmit() {
@@ -165,7 +180,50 @@ class _BillUploadScreenState extends State<BillUploadScreen> {
                             Text('Receipt Photograph', style: AppTypography.labelLarge),
                             const SizedBox(height: 12),
                             GestureDetector(
-                              onTap: isVerifying ? null : _selectMockBill,
+                              onTap: isVerifying
+                                  ? null
+                                  : () => showModalBottomSheet(
+                                        context: context,
+                                        backgroundColor: Colors.transparent,
+                                        builder: (ctx) => Container(
+                                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.getSurface(context),
+                                            borderRadius: const BorderRadius.vertical(
+                                                top: Radius.circular(20)),
+                                          ),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Container(
+                                                  width: 40,
+                                                  height: 4,
+                                                  margin: const EdgeInsets.only(bottom: 16),
+                                                  decoration: BoxDecoration(
+                                                      color: AppColors.getBorder(context),
+                                                      borderRadius: BorderRadius.circular(2))),
+                                              ListTile(
+                                                leading: Icon(Icons.camera_alt_outlined,
+                                                    color: themeColor),
+                                                title: const Text('Take Photo'),
+                                                onTap: () {
+                                                  Navigator.pop(ctx);
+                                                  _pickBill();
+                                                },
+                                              ),
+                                              ListTile(
+                                                leading: Icon(Icons.photo_library_outlined,
+                                                    color: themeColor),
+                                                title: const Text('Choose from Gallery'),
+                                                onTap: () {
+                                                  Navigator.pop(ctx);
+                                                  _pickBillFromGallery();
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
                               child: Container(
                                 height: 160,
                                 width: double.infinity,
@@ -189,7 +247,9 @@ class _BillUploadScreenState extends State<BillUploadScreen> {
                                           Icon(Icons.check_circle, color: AppColors.getSuccess(context), size: 40),
                                           const SizedBox(height: 8),
                                           Text(
-                                            'bill_photo.jpg attached',
+                                            _billPhotoPath != null
+                                                ? _billPhotoPath!.split('/').last
+                                                : 'photo attached',
                                             style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.bold),
                                           ),
                                           const SizedBox(height: 4),

@@ -22,6 +22,8 @@ class ZoneRepositoryImpl implements ZoneRepository {
       geohash: 'te7u6b',
       warlordId: 'd3b07384-d113-4ec5-a55d-3d4c6d6c6e7f',
       warlordUsername: 'BurgerKing99',
+      // PNG (not SVG) so NetworkImage can decode it onto the marker.
+      warlordAvatarUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=BurgerKing99',
       customTitle: 'Burger Warlord',
       customColour: '#E53935',
       customIcon: 'hamburger',
@@ -39,6 +41,7 @@ class ZoneRepositoryImpl implements ZoneRepository {
       geohash: 'te7u6b',
       warlordId: '8d7fcdbb-2b81-4202-a8c6-b37119ff0856',
       warlordUsername: 'SushiMaster',
+      warlordAvatarUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=SushiMaster',
       customTitle: 'Wasabi Master',
       customColour: '#4CAF50',
       customIcon: 'fork',
@@ -252,7 +255,9 @@ class ZoneRepositoryImpl implements ZoneRepository {
         warlordId: warlordId,
         warlordUsername: warlordUsername,
         customTitle: old.customTitle ?? 'Tactical Raider Stronghold',
-        customColour: old.customColour,
+        // Newly captured self-zones default to yellow (Task 3); the user can
+        // recolour later via zone customization.
+        customColour: '#FFD700',
         customIcon: old.customIcon,
         totalRaids: old.totalRaids + 1,
         warlordRaids: old.warlordRaids + 1,
@@ -262,8 +267,8 @@ class ZoneRepositoryImpl implements ZoneRepository {
     }
   }
 
-  /// Fetch nearby zones from the backend using real GPS coordinates.
-  /// Falls back to mock zones on any error.
+  /// Fetch nearby food zones from the backend using real GPS coordinates.
+  /// Falls back to local mock zones on any network error.
   Future<List<ZoneEntity>> getNearbyFoodPlaces({
     required double lat,
     required double lng,
