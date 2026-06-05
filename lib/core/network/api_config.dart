@@ -9,7 +9,7 @@ class ApiConfig {
   /// Backend base URL. All paths in [ApiEndpoints] are relative to this.
   //static const String baseUrl = 'https://dev.gixbot.online/api/v1';
   static const String baseUrl =
-      'https://b34e-110-235-219-134.ngrok-free.app/api/v1';
+      'https://95b5-110-235-219-172.ngrok-free.app/api/v1';
 
   /// Localhost for the Android emulator — handy when running the FastAPI
   /// server locally. Swap [baseUrl] for this during local development.

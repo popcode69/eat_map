@@ -2,6 +2,7 @@ import '../../domain/entities/leaderboard_user_entity.dart';
 
 class LeaderboardUserModel extends LeaderboardUserEntity {
   const LeaderboardUserModel({
+    super.userId,
     required super.rank,
     required super.username,
     super.displayName,
@@ -13,6 +14,7 @@ class LeaderboardUserModel extends LeaderboardUserEntity {
 
   factory LeaderboardUserModel.fromJson(Map<String, dynamic> json) {
     return LeaderboardUserModel(
+      userId: json['user_id'] as String?,
       rank: (json['rank'] as num).toInt(),
       username: json['username'] as String,
       displayName: json['display_name'] as String?,

@@ -18,6 +18,10 @@ class ApiEndpoints {
   static const String nearbyZones = '/zones/nearby';
   static String zoneDetail(String zoneId) => '/zones/$zoneId';
   static String customizeZone(String zoneId) => '/zones/$zoneId/customize';
+  static String zoneRaiders(String zoneId) => '/zones/$zoneId/raiders';
+
+  // ── Users ────────────────────────────────────────────────────────────
+  static String userProfile(String userId) => '/users/$userId';
 
   // ── Raids ───────────────────────────────────────────────────────────
   static const String startRaid = '/raids/start';

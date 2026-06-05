@@ -354,7 +354,7 @@ class _MapScreenState extends State<MapScreen> {
 
     // Timer was still running — calculate remaining seconds.
     final startedAt = DateTime.tryParse(raid['startedAt'] as String? ?? '');
-    final durationMins = (raid['durationMins'] as num?)?.toInt() ?? 15;
+    final durationMins = (raid['durationMins'] as num?)?.toInt() ?? 5;
     if (startedAt == null) {
       await SecureStorage().clearActiveRaid();
       return;
@@ -370,6 +370,7 @@ class _MapScreenState extends State<MapScreen> {
             raidId: raidId,
             zoneId: zoneId,
             secondsRemaining: remaining,
+            totalSeconds: durationMins * 60,
           ));
       context.push('/raid-timer', extra: {
         'zoneId': zoneId,

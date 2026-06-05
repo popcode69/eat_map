@@ -49,15 +49,17 @@ final class RaidResumeRequested extends RaidEvent {
   final String raidId;
   final String zoneId;
   final int secondsRemaining;
+  final int totalSeconds;
 
   const RaidResumeRequested({
     required this.raidId,
     required this.zoneId,
     required this.secondsRemaining,
+    required this.totalSeconds,
   });
 
   @override
-  List<Object?> get props => [raidId, zoneId, secondsRemaining];
+  List<Object?> get props => [raidId, zoneId, secondsRemaining, totalSeconds];
 }
 
 final class RaidVerificationSubmitted extends RaidEvent {
@@ -104,15 +106,17 @@ final class RaidTimerActive extends RaidState {
   final String raidId;
   final String zoneId;
   final int secondsRemaining;
+  final int totalSeconds;
 
   const RaidTimerActive({
     required this.raidId,
     required this.zoneId,
     required this.secondsRemaining,
+    required this.totalSeconds,
   });
 
   @override
-  List<Object?> get props => [raidId, zoneId, secondsRemaining];
+  List<Object?> get props => [raidId, zoneId, secondsRemaining, totalSeconds];
 }
 
 final class RaidVerifying extends RaidState {}
@@ -211,6 +215,7 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
 
         final targetEndTime =
             raid.startedAt.add(Duration(minutes: raid.durationMins));
+        final totalSeconds = raid.durationMins * 60;
         final initialSecondsRemaining =
             targetEndTime.difference(DateTime.now()).inSeconds;
 
@@ -218,6 +223,7 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
           raidId: raid.id,
           zoneId: raid.zoneId,
           secondsRemaining: initialSecondsRemaining > 0 ? initialSecondsRemaining : 0,
+          totalSeconds: totalSeconds,
         ));
 
         _timerSubscription = Stream.periodic(
@@ -241,6 +247,7 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
       raidId: event.raidId,
       zoneId: event.zoneId,
       secondsRemaining: event.secondsRemaining,
+      totalSeconds: event.totalSeconds,
     ));
 
     final targetEndTime =
@@ -276,6 +283,7 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
           raidId: current.raidId,
           zoneId: current.zoneId,
           secondsRemaining: event.secondsRemaining,
+          totalSeconds: current.totalSeconds,
         ));
       }
     }

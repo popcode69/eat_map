@@ -44,6 +44,15 @@ import 'features/places/data/repositories/place_request_repository_impl.dart';
 import 'features/places/presentation/bloc/place_request_bloc.dart';
 import 'features/places/presentation/screens/request_place_screen.dart';
 
+// Place Detail
+import 'features/zone/domain/entities/zone_entity.dart';
+import 'features/zone/presentation/bloc/place_detail_bloc.dart';
+import 'features/zone/presentation/screens/place_detail_screen.dart';
+
+// User Profile
+import 'features/profile/presentation/bloc/user_profile_bloc.dart';
+import 'features/profile/presentation/screens/user_profile_screen.dart';
+
 import 'injection_container.dart' as di;
 
 // ─────────────────────────────────────────────────────────────────
@@ -151,6 +160,38 @@ class EatMapApp extends StatelessWidget {
               raidId: params['raidId'] as String,
               zoneName: params['zoneName'] as String,
               colour: params['colour'] as String,
+              userLat: (params['userLat'] as num?)?.toDouble(),
+              userLng: (params['userLng'] as num?)?.toDouble(),
+            ),
+            state,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/place-detail',
+        pageBuilder: (context, state) {
+          final zone = state.extra as ZoneEntity;
+          return _buildPage(
+            BlocProvider(
+              create: (_) => di.sl<PlaceDetailBloc>(),
+              child: PlaceDetailScreen(zone: zone),
+            ),
+            state,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/user-profile',
+        pageBuilder: (context, state) {
+          final params = state.extra as Map<String, dynamic>;
+          return _buildPage(
+            BlocProvider(
+              create: (_) => di.sl<UserProfileBloc>(),
+              child: UserProfileScreen(
+                userId: params['userId'] as String,
+                previewName: params['previewName'] as String?,
+                previewAvatarUrl: params['previewAvatarUrl'] as String?,
+              ),
             ),
             state,
           );

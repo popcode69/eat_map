@@ -15,12 +15,20 @@ import 'features/auth/domain/usecases/update_profile.dart';
 import 'features/auth/domain/usecases/upload_avatar.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 
+// Profile Module
+import 'features/profile/data/repositories/user_profile_repository_impl.dart';
+import 'features/profile/domain/repositories/user_profile_repository.dart';
+import 'features/profile/domain/usecases/get_user_profile.dart';
+import 'features/profile/presentation/bloc/user_profile_bloc.dart';
+
 // Zone & Map Module
 import 'features/zone/data/repositories/zone_repository_impl.dart';
 import 'features/zone/domain/repositories/zone_repository.dart';
 import 'features/zone/domain/usecases/customize_zone.dart';
 import 'features/zone/domain/usecases/get_nearby_zones.dart';
 import 'features/zone/domain/usecases/get_zone_detail.dart';
+import 'features/zone/domain/usecases/get_zone_raiders.dart';
+import 'features/zone/presentation/bloc/place_detail_bloc.dart';
 import 'features/map/presentation/bloc/map_bloc.dart';
 
 // Raid Module
@@ -90,7 +98,17 @@ Future<void> init() async {
       ));
 
   // ==========================================
-  // 3. FEATURES - ZONE & MAP
+  // 3. FEATURES - USER PROFILE
+  // ==========================================
+  sl.registerLazySingleton<UserProfileRepository>(
+      () => UserProfileRepositoryImpl(dioClient: sl<DioClient>()));
+  sl.registerLazySingleton<GetUserProfile>(
+      () => GetUserProfile(sl<UserProfileRepository>()));
+  sl.registerFactory<UserProfileBloc>(
+      () => UserProfileBloc(getUserProfile: sl<GetUserProfile>()));
+
+  // ==========================================
+  // 4. FEATURES - ZONE & MAP
   // ==========================================
   sl.registerLazySingleton<ZoneRepository>(() => ZoneRepositoryImpl(
         dioClient: sl<DioClient>(),
@@ -99,6 +117,12 @@ Future<void> init() async {
   sl.registerLazySingleton<GetNearbyZones>(() => GetNearbyZones(sl<ZoneRepository>()));
   sl.registerLazySingleton<GetZoneDetail>(() => GetZoneDetail(sl<ZoneRepository>()));
   sl.registerLazySingleton<CustomizeZone>(() => CustomizeZone(sl<ZoneRepository>()));
+  sl.registerLazySingleton<GetZoneRaiders>(() => GetZoneRaiders(sl<ZoneRepository>()));
+
+  sl.registerFactory<PlaceDetailBloc>(() => PlaceDetailBloc(
+        getZoneDetail: sl<GetZoneDetail>(),
+        getZoneRaiders: sl<GetZoneRaiders>(),
+      ));
 
   sl.registerFactory<MapBloc>(() => MapBloc(
         getNearbyZones: sl<GetNearbyZones>(),

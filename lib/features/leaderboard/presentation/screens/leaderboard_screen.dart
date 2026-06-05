@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -193,6 +194,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
   }
 
   Widget _buildRankCard(dynamic rankItem, String scope) {
+    final String? userId = rankItem.userId as String?;
     final int rank = rankItem.rank;
     final bool isUser = rankItem.username.contains('cyber_raider') || rankItem.username == 'CyberEats';
 
@@ -213,7 +215,16 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
 
     double cardBorderWidth = isUser ? 1.8 : 1.2;
 
-    return Container(
+    return GestureDetector(
+      onTap: userId != null
+          ? () => context.push('/user-profile', extra: {
+                'userId': userId,
+                'previewName':
+                    rankItem.displayName ?? rankItem.username,
+                'previewAvatarUrl': rankItem.avatarUrl,
+              })
+          : null,
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
       decoration: BoxDecoration(
         color: isUser
@@ -335,6 +346,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
           ),
         ],
       ),
+    ),
     );
   }
 }

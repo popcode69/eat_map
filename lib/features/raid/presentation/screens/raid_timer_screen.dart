@@ -107,7 +107,15 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
             ).then((_) {
               if (!context.mounted) return;
               context.read<AuthBloc>().add(AuthCheckRequested());
-              context.read<MapBloc>().add(const LoadNearbyZonesRequested('te7u6b'));
+              if (widget.userLat != null && widget.userLng != null) {
+                context.read<MapBloc>().add(LoadNearbyZonesRequested(
+                  'te7u6b',
+                  lat: widget.userLat,
+                  lng: widget.userLng,
+                ));
+              } else {
+                context.read<MapBloc>().add(const LoadNearbyZonesRequested('te7u6b'));
+              }
               context.go('/home');
             });
           } else if (state is RaidFailure) {
@@ -148,7 +156,9 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
 
           if (state is bloc_state.RaidTimerActive) {
             final secondsRemaining = state.secondsRemaining;
-            final progressPercent = secondsRemaining / 120.0; // 2 minutes = 120 seconds
+            final progressPercent = state.totalSeconds > 0
+                ? secondsRemaining / state.totalSeconds
+                : 0.0;
 
             return SafeArea(
               child: Padding(
@@ -241,6 +251,8 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
                                   'raidId': state.raidId,
                                   'zoneName': widget.zoneName,
                                   'colour': widget.colour,
+                                  'userLat': widget.userLat,
+                                  'userLng': widget.userLng,
                                 });
                               },
                               style: ElevatedButton.styleFrom(

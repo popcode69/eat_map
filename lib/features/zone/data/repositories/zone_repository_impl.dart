@@ -5,8 +5,10 @@ import '../../../../core/error/failures.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../domain/entities/zone_entity.dart';
+import '../../domain/entities/zone_raider_entity.dart';
 import '../../domain/repositories/zone_repository.dart';
 import '../models/zone_model.dart';
+import '../models/zone_raider_model.dart';
 
 class ZoneRepositoryImpl implements ZoneRepository {
   final DioClient _dioClient;
@@ -239,6 +241,63 @@ class ZoneRepositoryImpl implements ZoneRepository {
     } catch (e) {
       return Left(ErrorHandler.handle(e));
     }
+  }
+
+  @override
+  Future<Either<Failure, List<ZoneRaiderEntity>>> getZoneRaiders({
+    required String zoneId,
+  }) async {
+    try {
+      final response = await _dioClient.dio.get(ApiEndpoints.zoneRaiders(zoneId));
+      final dataList = response.data as List;
+      final raiders = dataList
+          .map((json) => ZoneRaiderModel.fromJson(json as Map<String, dynamic>))
+          .toList();
+      return Right(raiders);
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.unknown) {
+        return Right(_mockRaidersFor(zoneId));
+      }
+      return Left(ErrorHandler.handle(e.error ?? e));
+    } catch (e) {
+      return Left(ErrorHandler.handle(e));
+    }
+  }
+
+  List<ZoneRaiderEntity> _mockRaidersFor(String zoneId) {
+    final zone = _localMockZones.firstWhere(
+      (z) => z.id == zoneId,
+      orElse: () => _localMockZones.first,
+    );
+    final raiders = <ZoneRaiderEntity>[];
+    if (zone.warlordId != null) {
+      raiders.add(ZoneRaiderModel(
+        userId: zone.warlordId!,
+        username: zone.warlordUsername ?? 'Champion',
+        avatarUrl: zone.warlordAvatarUrl,
+        raidCount: zone.warlordRaids,
+      ));
+    }
+    if (zone.totalRaids > zone.warlordRaids) {
+      raiders.add(const ZoneRaiderModel(
+        userId: 'mock-user-2',
+        username: 'FoodExplorer',
+        raidCount: 5,
+      ));
+      raiders.add(const ZoneRaiderModel(
+        userId: 'mock-user-3',
+        username: 'DineDrifter',
+        raidCount: 3,
+      ));
+      raiders.add(const ZoneRaiderModel(
+        userId: 'mock-user-4',
+        username: 'GrillHunter',
+        raidCount: 1,
+      ));
+    }
+    return raiders;
   }
 
   void mockCaptureZone(String zoneId, String warlordId, String warlordUsername) {

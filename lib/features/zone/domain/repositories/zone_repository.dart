@@ -1,6 +1,7 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
 import '../entities/zone_entity.dart';
+import '../entities/zone_raider_entity.dart';
 
 abstract class ZoneRepository {
   Future<Either<Failure, List<ZoneEntity>>> getNearbyZones({
@@ -16,5 +17,9 @@ abstract class ZoneRepository {
     required String title,
     required String colour,
     required String icon,
+  });
+
+  Future<Either<Failure, List<ZoneRaiderEntity>>> getZoneRaiders({
+    required String zoneId,
   });
 }

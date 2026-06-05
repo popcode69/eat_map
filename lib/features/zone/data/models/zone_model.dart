@@ -18,19 +18,25 @@ class ZoneModel extends ZoneEntity {
     required super.warlordRaids,
     required super.status,
     required super.updatedAt,
+    super.category,
+    super.rating,
+    super.userRatingsTotal,
+    super.priceLevel,
+    super.photoUrl,
   });
 
   factory ZoneModel.fromJson(Map<String, dynamic> json) {
-    final placeId = (json['place_id'] as String?) ?? '';
     final backendId = (json['id'] as String?) ?? '';
-    // The backend sometimes returns identical placeholder UUIDs for every zone
-    // (e.g. "temp-zone-uuid-mock-pla"). place_id is the canonical Google Places
-    // unique identifier and is always unique per venue, so prefer it as the
-    // entity key. This prevents marker collisions on the map.
-    final id = placeId.isNotEmpty ? placeId : backendId;
+    final placeId = (json['place_id'] as String?) ?? '';
+    // The backend's `id` field is now the Google Places ID used in API URLs
+    // (e.g. "ChIJTZ9GZeG1bTkRjwWOpO2l29Q"). Prefer it as canonical so that
+    // calls like GET /zones/{id}/raiders hit the correct endpoint. Fall back
+    // to place_id only when id is absent.
+    final id = backendId.isNotEmpty ? backendId : placeId;
+
     return ZoneModel(
       id: id,
-      placeId: id,
+      placeId: placeId.isNotEmpty ? placeId : id,
       name: (json['name'] as String?) ?? 'Unknown Place',
       lat: (json['lat'] as num?)?.toDouble() ?? 0.0,
       lng: (json['lng'] as num?)?.toDouble() ?? 0.0,
@@ -47,6 +53,11 @@ class ZoneModel extends ZoneEntity {
       updatedAt: json['updated_at'] != null
           ? DateTime.tryParse(json['updated_at'] as String) ?? DateTime.now()
           : DateTime.now(),
+      category: json['category'] as String?,
+      rating: (json['rating'] as num?)?.toDouble(),
+      userRatingsTotal: (json['user_ratings_total'] as num?)?.toInt(),
+      priceLevel: (json['price_level'] as num?)?.toInt(),
+      photoUrl: json['photo_url'] as String?,
     );
   }
 
@@ -68,6 +79,11 @@ class ZoneModel extends ZoneEntity {
       'warlord_raids': warlordRaids,
       'status': status,
       'updated_at': updatedAt.toIso8601String(),
+      'category': category,
+      'rating': rating,
+      'user_ratings_total': userRatingsTotal,
+      'price_level': priceLevel,
+      'photo_url': photoUrl,
     };
   }
 }

@@ -16,12 +16,16 @@ class BillUploadScreen extends StatefulWidget {
   final String raidId;
   final String zoneName;
   final String colour;
+  final double? userLat;
+  final double? userLng;
 
   const BillUploadScreen({
     super.key,
     required this.raidId,
     required this.zoneName,
     required this.colour,
+    this.userLat,
+    this.userLng,
   });
 
   @override
@@ -104,7 +108,15 @@ class _BillUploadScreenState extends State<BillUploadScreen> {
     if (!mounted) return;
     // Refresh auth profile stats and reload map zones, then return to the map.
     context.read<AuthBloc>().add(AuthCheckRequested());
-    context.read<MapBloc>().add(const LoadNearbyZonesRequested('te7u6b'));
+    if (widget.userLat != null && widget.userLng != null) {
+      context.read<MapBloc>().add(LoadNearbyZonesRequested(
+        'te7u6b',
+        lat: widget.userLat,
+        lng: widget.userLng,
+      ));
+    } else {
+      context.read<MapBloc>().add(const LoadNearbyZonesRequested('te7u6b'));
+    }
     context.go('/home');
   }
 

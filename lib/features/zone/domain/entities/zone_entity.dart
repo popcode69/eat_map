@@ -18,6 +18,13 @@ class ZoneEntity extends Equatable {
   final String status;
   final DateTime updatedAt;
 
+  // Google Places enrichment fields (populated when backend returns them)
+  final String? category;
+  final double? rating;
+  final int? userRatingsTotal;
+  final int? priceLevel;
+  final String? photoUrl;
+
   const ZoneEntity({
     required this.id,
     required this.placeId,
@@ -35,6 +42,11 @@ class ZoneEntity extends Equatable {
     required this.warlordRaids,
     required this.status,
     required this.updatedAt,
+    this.category,
+    this.rating,
+    this.userRatingsTotal,
+    this.priceLevel,
+    this.photoUrl,
   });
 
   @override
@@ -55,5 +67,10 @@ class ZoneEntity extends Equatable {
         warlordRaids,
         status,
         updatedAt,
+        category,
+        rating,
+        userRatingsTotal,
+        priceLevel,
+        photoUrl,
       ];
 }

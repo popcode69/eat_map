@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -196,7 +197,20 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
 
         // Warlord Banner (Modern bordered card style)
         Card(
-          child: Padding(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: _currentZone.warlordId == null
+                ? null
+                : () {
+                    _triggerHaptic();
+                    Navigator.pop(context);
+                    context.push('/user-profile', extra: {
+                      'userId': _currentZone.warlordId!,
+                      'previewName': _currentZone.warlordUsername,
+                      'previewAvatarUrl': _currentZone.warlordAvatarUrl,
+                    });
+                  },
+            child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
@@ -294,6 +308,7 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
             ),
           ),
         ),
+        ),
 
         const SizedBox(height: 20),
 
@@ -316,7 +331,30 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
           ],
         ),
 
-        const SizedBox(height: 32),
+        const SizedBox(height: 12),
+
+        // View full place detail screen
+        OutlinedButton.icon(
+          onPressed: () {
+            _triggerHaptic();
+            Navigator.pop(context);
+            context.push('/place-detail', extra: _currentZone);
+          },
+          icon: const Icon(Icons.info_outline_rounded, size: 18),
+          label: const Text('View Full Details'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 48),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            side: BorderSide(color: themeColor, width: 1.2),
+            foregroundColor: themeColor,
+            textStyle: const TextStyle(
+              fontFamily: AppTypography.headingFont,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 20),
 
         // Geofence gate: raiding/capturing is only available when the user is
         // physically standing within range of the zone.
