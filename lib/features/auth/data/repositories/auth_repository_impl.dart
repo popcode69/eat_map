@@ -50,6 +50,10 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<Either<Failure, UserEntity>> signInWithGoogle({
     required String googleId,
+    required String email,
+    required String displayName,
+    required String username,
+    String? avatarUrl,
     required String deviceToken,
     required String deviceId,
   }) async {
@@ -58,6 +62,10 @@ class AuthRepositoryImpl implements AuthRepository {
         ApiEndpoints.authGoogle,
         data: {
           'google_id': googleId,
+          'email': email,
+          'display_name': displayName,
+          'username': username,
+          'avatar_url': avatarUrl,
           'device_token': deviceToken,
           'device_id': deviceId,
         },

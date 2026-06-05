@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'dart:io';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/cache/secure_storage.dart';
@@ -23,6 +28,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
   bool _isOtpSent = false;
+  bool _isGoogleSigningIn = false;
+
+  // Web Client ID (client_type: 3) from google-services.json — required so
+  // GoogleSignIn returns a signed idToken JWT instead of the numeric googleUser.id.
+  static const _webClientId =
+      '31222740499-tqg2tp18pcbt2gg7i82rc4hnb6aepa4p.apps.googleusercontent.com';
+
+  final _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'profile'],
+    serverClientId: _webClientId,
+  );
 
   @override
   void dispose() {
@@ -68,16 +84,109 @@ class _LoginScreenState extends State<LoginScreen> {
     context.go(seen ? '/home' : '/onboarding');
   }
 
+  /// Requests location permission and dispatches [UpdateLocationRequested]
+  /// immediately after the user logs in. This is fire-and-forget — failures
+  /// are silently ignored so they never block navigation.
+  Future<void> _updateUserLocation(BuildContext context) async {
+    try {
+      // Check & request permission
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) {
+        return;
+      }
+
+      // Fetch position (low accuracy = faster, saves battery)
+      // geolocator ^11 uses flat named params, not a LocationSettings wrapper
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+        timeLimit: const Duration(seconds: 10),
+      );
+
+      if (!context.mounted) return;
+      context.read<AuthBloc>().add(
+            UpdateLocationRequested(
+              lat: position.latitude,
+              lng: position.longitude,
+            ),
+          );
+    } catch (_) {
+      // Silently ignore — location is best-effort, not critical for login
+    }
+  }
+
   void _onGoogleSignIn() {
     _triggerHaptic();
-    // Dispatch Google Sign-In event
-    context.read<AuthBloc>().add(
-          const SignInWithGoogleRequested(
-            googleId: 'mock_google_id_token',
-            deviceToken: 'mock_device_token',
-            deviceId: 'mock_device_id',
-          ),
-        );
+    _doGoogleSignIn();
+  }
+
+  Future<void> _doGoogleSignIn() async {
+    if (_isGoogleSigningIn) return;
+    setState(() => _isGoogleSigningIn = true);
+
+    try {
+      // 1. Trigger Google OAuth flow
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        // User cancelled the picker
+        setState(() => _isGoogleSigningIn = false);
+        return;
+      }
+
+      // 2. Extract profile data from Google sign-in result
+      final googleId = googleUser.id; // Google user ID (sub claim)
+      final email = googleUser.email;
+      final displayName = googleUser.displayName ?? email.split('@').first;
+      final username = email.split('@').first.replaceAll('.', '_');
+      final avatarUrl = googleUser.photoUrl;
+
+      // 3. Get FCM device token (nullable — send empty string on failure)
+      String deviceToken = '';
+      try {
+        deviceToken = await FirebaseMessaging.instance.getToken() ?? '';
+      } catch (_) {}
+
+      // 4. Get a stable device fingerprint
+      String deviceId = 'unknown';
+      try {
+        final deviceInfo = DeviceInfoPlugin();
+        if (Platform.isAndroid) {
+          final info = await deviceInfo.androidInfo;
+          deviceId = info.id; // Android hardware serial
+        } else if (Platform.isIOS) {
+          final info = await deviceInfo.iosInfo;
+          deviceId = info.identifierForVendor ?? 'unknown';
+        }
+      } catch (_) {}
+
+      if (!mounted) return;
+
+      // 5. Dispatch real credentials + profile to AuthBloc
+      context.read<AuthBloc>().add(
+            SignInWithGoogleRequested(
+              googleId: googleId,
+              email: email,
+              displayName: displayName,
+              username: username,
+              avatarUrl: avatarUrl,
+              deviceToken: deviceToken,
+              deviceId: deviceId,
+            ),
+          );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Google sign-in failed: $e'),
+          backgroundColor: AppColors.getError(context),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isGoogleSigningIn = false);
+    }
   }
 
   @override
@@ -102,7 +211,8 @@ class _LoginScreenState extends State<LoginScreen> {
       body: BlocConsumer<AuthBloc, AuthState>(
         listener: (context, state) {
           if (state is Authenticated) {
-            // Login successful
+            // Login successful — update server-side location immediately
+            _updateUserLocation(context);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Welcome back, ${state.user.username}! ⚔️'),
@@ -342,7 +452,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     // Google OAuth Button ( secondary border design standard )
                     OutlinedButton(
-                      onPressed: isLoading ? null : _onGoogleSignIn,
+                      onPressed: (isLoading || _isGoogleSigningIn) ? null : _onGoogleSignIn,
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(color: AppColors.getBorder(context), width: 1.5),
                         minimumSize: const Size(double.infinity, 56),
@@ -350,20 +460,28 @@ class _LoginScreenState extends State<LoginScreen> {
                           borderRadius: BorderRadius.circular(16.0),
                         ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          // Custom Icon/Asset Placeholder
-                          const Icon(Icons.g_mobiledata, size: 28, color: Colors.blue),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Continue with Google',
-                            style: AppTypography.labelLarge.copyWith(
-                              color: AppColors.getOnSurface(context),
+                      child: _isGoogleSigningIn
+                          ? SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: AppColors.getPrimary(context),
+                              ),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.g_mobiledata, size: 28, color: Colors.blue),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Continue with Google',
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: AppColors.getOnSurface(context),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
                     ),
 
                     const SizedBox(height: 48),

@@ -10,6 +10,10 @@ abstract class AuthRepository {
 
   Future<Either<Failure, UserEntity>> signInWithGoogle({
     required String googleId,
+    required String email,
+    required String displayName,
+    required String username,
+    String? avatarUrl,
     required String deviceToken,
     required String deviceId,
   });

@@ -12,7 +12,20 @@
           "package_name": "com.eatmap.client"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "31222740499-ag8bnto7vp2tuhgualnr9ppul5lkf30e.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.eatmap.client",
+            "certificate_hash": "6ff09adfa35ef3b2fb49460c2634248a61d4e680"
+          }
+        },
+        {
+          "client_id": "31222740499-tqg2tp18pcbt2gg7i82rc4hnb6aepa4p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBM2tTtvb2rJnhxd8mE3BDDje7XZbJ9mPI"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "31222740499-tqg2tp18pcbt2gg7i82rc4hnb6aepa4p.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

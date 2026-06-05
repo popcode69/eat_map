@@ -10,11 +10,19 @@ class SignInWithGoogle {
 
   Future<Either<Failure, UserEntity>> call({
     required String googleId,
+    required String email,
+    required String displayName,
+    required String username,
+    String? avatarUrl,
     required String deviceToken,
     required String deviceId,
   }) async {
     return await _repository.signInWithGoogle(
       googleId: googleId,
+      email: email,
+      displayName: displayName,
+      username: username,
+      avatarUrl: avatarUrl,
       deviceToken: deviceToken,
       deviceId: deviceId,
     );

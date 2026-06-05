@@ -21,17 +21,25 @@ final class SignInWithPhoneRequested extends AuthEvent {
 
 final class SignInWithGoogleRequested extends AuthEvent {
   final String googleId;
+  final String email;
+  final String displayName;
+  final String username;
+  final String? avatarUrl;
   final String deviceToken;
   final String deviceId;
 
   const SignInWithGoogleRequested({
     required this.googleId,
+    required this.email,
+    required this.displayName,
+    required this.username,
+    this.avatarUrl,
     required this.deviceToken,
     required this.deviceId,
   });
 
   @override
-  List<Object?> get props => [googleId, deviceToken, deviceId];
+  List<Object?> get props => [googleId, email, displayName, username, avatarUrl, deviceToken, deviceId];
 }
 
 final class SignOutRequested extends AuthEvent {}

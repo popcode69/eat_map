@@ -74,6 +74,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     emit(AuthLoading());
     final result = await _signInWithGoogle(
       googleId: event.googleId,
+      email: event.email,
+      displayName: event.displayName,
+      username: event.username,
+      avatarUrl: event.avatarUrl,
       deviceToken: event.deviceToken,
       deviceId: event.deviceId,
     );

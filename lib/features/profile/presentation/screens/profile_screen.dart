@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -97,6 +98,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
     context.read<AuthBloc>().add(UploadAvatarRequested(filePath: picked.path));
   }
 
+  Future<void> _handleSignOut(BuildContext context) async {
+    _triggerHaptic();
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.getSurface(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Sign Out',
+          style: AppTypography.titleLarge.copyWith(
+            color: AppColors.getOnSurface(context),
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to sign out from EatMap? You will need to sign in again to access your account.',
+          style: AppTypography.bodyMedium.copyWith(
+            color: AppColors.getOnSurfaceMuted(context),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.getOnSurfaceMuted(context)),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.getError(context),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    // Sign out from Google (clears cached Google session)
+    try {
+      await GoogleSignIn().signOut();
+    } catch (_) {
+      // Ignore — Google sign-out failure shouldn't block local sign-out
+    }
+
+    if (!mounted) return;
+
+    // Clear local tokens and auth state
+    context.read<AuthBloc>().add(SignOutRequested());
+    context.go('/login');
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<AuthBloc, AuthState>(
@@ -117,6 +175,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               backgroundColor: AppColors.getError(context),
             ),
           );
+        } else if (state is Unauthenticated) {
+          // Navigate to login when auth state becomes unauthenticated
+          context.go('/login');
         }
       },
       builder: (context, state) {
@@ -544,11 +605,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildSignOutButton() {
     return OutlinedButton(
-      onPressed: () {
-        _triggerHaptic();
-        context.read<AuthBloc>().add(SignOutRequested());
-        context.go('/login');
-      },
+      onPressed: () => _handleSignOut(context),
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(double.infinity, 50),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
