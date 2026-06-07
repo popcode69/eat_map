@@ -60,6 +60,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return BlocListener<AuthBloc, AuthState>(
+      // Force the listener to fire even when previous == current (Equatable
+      // same-props). Without this, saving identical values returns an
+      // Authenticated state equal to the existing one and the listener silently
+      // skips, leaving the spinner stuck forever.
+      listenWhen: (previous, current) =>
+          _isSaving || previous != current,
       listener: (context, state) {
         if (state is Authenticated && _isSaving) {
           setState(() => _isSaving = false);

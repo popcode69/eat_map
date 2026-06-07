@@ -29,15 +29,12 @@ import 'features/wallet/presentation/bloc/wallet_bloc.dart';
 // Leaderboard
 import 'features/leaderboard/presentation/bloc/leaderboard_bloc.dart';
 
-// Profile & Food Passport
+// Profile
 import 'features/profile/presentation/screens/edit_profile_screen.dart';
-import 'features/profile/presentation/screens/food_passport_screen.dart';
 
 // Notifications
 import 'features/notifications/presentation/screens/notifications_screen.dart';
 
-// Onboarding
-import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 
 // Place request
 import 'features/places/data/repositories/place_request_repository_impl.dart';
@@ -53,6 +50,11 @@ import 'features/zone/presentation/screens/place_detail_screen.dart';
 import 'features/profile/presentation/bloc/user_profile_bloc.dart';
 import 'features/profile/presentation/screens/user_profile_screen.dart';
 
+// Share Status Card
+import 'features/profile/presentation/screens/share_status_screen.dart';
+import 'features/profile/presentation/widgets/shareable_status_card.dart';
+
+import 'core/notifications/notification_service.dart';
 import 'injection_container.dart' as di;
 
 // ─────────────────────────────────────────────────────────────────
@@ -86,6 +88,8 @@ CustomTransitionPage<void> _buildPage(Widget child, GoRouterState state) {
 class EatMapApp extends StatelessWidget {
   const EatMapApp({super.key});
 
+  static GoRouter get router => _router;
+
   static final GoRouter _router = GoRouter(
     initialLocation: '/splash',
     routes: [
@@ -98,11 +102,6 @@ class EatMapApp extends StatelessWidget {
         pageBuilder: (context, state) => _buildPage(const LoginScreen(), state),
       ),
       GoRoute(
-        path: '/onboarding',
-        pageBuilder: (context, state) =>
-            _buildPage(const OnboardingScreen(), state),
-      ),
-      GoRoute(
         path: '/home',
         pageBuilder: (context, state) => _buildPage(const MainShell(), state),
       ),
@@ -112,11 +111,6 @@ class EatMapApp extends StatelessWidget {
           final user = state.extra as UserEntity;
           return _buildPage(EditProfileScreen(user: user), state);
         },
-      ),
-      GoRoute(
-        path: '/profile/passport',
-        pageBuilder: (context, state) =>
-            _buildPage(const FoodPassportScreen(), state),
       ),
       GoRoute(
         path: '/request-place',
@@ -195,6 +189,13 @@ class EatMapApp extends StatelessWidget {
             ),
             state,
           );
+        },
+      ),
+      GoRoute(
+        path: '/share-card',
+        pageBuilder: (context, state) {
+          final data = state.extra as StatusCardData;
+          return _buildPage(ShareStatusScreen(data: data), state);
         },
       ),
     ],
@@ -278,6 +279,9 @@ class EatMapApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Wire the router into the notification service so tap-to-navigate works.
+    NotificationService.setRouter(_router);
+
     return MultiBlocProvider(
       providers: [
         BlocProvider<ConnectivityCubit>(

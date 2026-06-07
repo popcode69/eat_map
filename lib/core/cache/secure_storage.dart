@@ -13,8 +13,8 @@ class SecureStorage {
   // Constants keys
   static const String _tokenKey = 'auth_jwt_token';
   static const String _userSessionKey = 'auth_user_session';
-  static const String _onboardingSeenKey = 'onboarding_seen';
   static const String _activeRaidKey = 'active_raid';
+  static const String _mapLegendSeenKey = 'map_legend_seen';
 
   Future<void> saveToken(String token) async {
     await _storage.write(key: _tokenKey, value: token);
@@ -63,22 +63,16 @@ class SecureStorage {
     await _storage.delete(key: _activeRaidKey);
   }
 
-  // ── Onboarding ────────────────────────────────────────────────────
-  Future<void> setOnboardingSeen() async {
-    await _storage.write(key: _onboardingSeenKey, value: 'true');
+  // ── Map legend ────────────────────────────────────────────────────
+  Future<void> setMapLegendSeen() async {
+    await _storage.write(key: _mapLegendSeenKey, value: 'true');
   }
 
-  Future<bool> hasSeenOnboarding() async {
-    return (await _storage.read(key: _onboardingSeenKey)) == 'true';
+  Future<bool> hasSeenMapLegend() async {
+    return (await _storage.read(key: _mapLegendSeenKey)) == 'true';
   }
 
   Future<void> clearAll() async {
-    // Preserve the onboarding flag across sign-out so returning users don't
-    // see the tutorial again.
-    final seenOnboarding = await hasSeenOnboarding();
     await _storage.deleteAll();
-    if (seenOnboarding) {
-      await setOnboardingSeen();
-    }
   }
 }

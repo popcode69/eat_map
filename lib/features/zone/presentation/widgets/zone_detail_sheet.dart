@@ -116,8 +116,14 @@ class _ZoneDetailSheetState extends State<ZoneDetailSheet> {
       themeColor = Color(int.parse('FF$hex', radix: 16));
     } catch (_) {}
 
+    // Pad the bottom past the Android system navigation bar (back/home/recents)
+    // so the CTA buttons are never hidden. viewInsets handles the keyboard for
+    // the customize view's text field; viewPadding handles the gesture/nav bar.
+    final mq = MediaQuery.of(context);
+    final bottomSafe = mq.viewPadding.bottom + mq.viewInsets.bottom;
+
     return Container(
-      padding: const EdgeInsets.all(24.0),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomSafe),
       decoration: BoxDecoration(
         color: AppColors.getSurface(context),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24.0)),

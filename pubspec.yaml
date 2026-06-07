@@ -82,6 +82,14 @@ dependencies:
   lottie: ^3.0.0
   haptic_feedback: ^0.5.0
 
+  # Notifications
+  flutter_local_notifications: ^17.2.1+1
+
+  # Sharing & media
+  share_plus: ^10.1.4
+  path_provider: ^2.1.5
+  gal: ^2.3.1
+
   # Utils
   logger: ^2.0.2+1
   dartz: ^0.10.1

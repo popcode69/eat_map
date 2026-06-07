@@ -189,10 +189,13 @@ class AuthRepositoryImpl implements AuthRepository {
       if (city != null) data['city'] = city;
       if (avatarUrl != null) data['avatar_url'] = avatarUrl;
 
-      await _dioClient.dio.patch(ApiEndpoints.me, data: data);
-
-      final profileResponse = await _dioClient.dio.get(ApiEndpoints.me);
-      final user = UserModel.fromJson(profileResponse.data as Map<String, dynamic>);
+      // Use the PATCH response body directly — the server returns the full
+      // updated user object on success. A second GET /auth/me is redundant
+      // and causes the Equatable silent-skip bug: if the returned data has
+      // identical props to the current Authenticated state, BLoC treats them
+      // as equal and the BlocListener never fires.
+      final response = await _dioClient.dio.patch(ApiEndpoints.me, data: data);
+      final user = UserModel.fromJson(response.data as Map<String, dynamic>);
       return Right(user);
     } on DioException catch (e) {
       return Left(ErrorHandler.handle(e.error ?? e));

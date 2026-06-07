@@ -8,11 +8,15 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../map/presentation/widgets/map_legend_overlay.dart';
 import '../../../shell/presentation/screens/main_shell.dart';
+import '../widgets/shareable_status_card.dart';
+import '../../domain/usecases/get_user_profile.dart';
 import '../../../auth/domain/entities/user_entity.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../auth/presentation/bloc/auth_event.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
+import '../../../../injection_container.dart' as di;
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -188,13 +192,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         final username = user?.username ?? 'Raider';
         final avatarUrl = user?.avatarUrl;
-        final level = user?.level ?? 5;
-        final points = user?.totalPoints ?? 6400;
-        final trustScore = user?.trustScore ?? 98;
-        final accountAge = user?.accountAge ?? 12;
+        final level = user?.level ?? 1;
+        final points = user?.totalPoints ?? 0;
+        final trustScore = user?.trustScore ?? 100;
+        final accountAge = user?.accountAge ?? 0;
         final joinedDate = user != null
             ? DateFormat('MMM dd, yyyy').format(user.createdAt)
-            : 'May 20, 2026';
+            : '—';
 
         Color trustColor = AppColors.getSuccess(context);
         String trustLabel = 'EXCELLENT';
@@ -240,9 +244,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _buildMetricsGrid(trustScore, accountAge, points),
+                  _buildMetricsGrid(user),
                   const SizedBox(height: 28),
-                  _buildNavigationCTAs(),
+                  _buildNavigationCTAs(user),
                   const SizedBox(height: 28),
                   _buildSignOutButton(),
                 ],
@@ -483,12 +487,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildMetricsGrid(int trustScore, int accountAge, int points) {
+  Widget _buildMetricsGrid(UserEntity? user) {
+    final walletBalance = user?.walletBalance ?? 0.0;
+    final accountAge = user?.accountAge ?? 0;
+
     return Row(
       children: [
-        Expanded(child: _buildMetricItem('⚔️ Total Raids', '42 visits', 'verified checks')),
+        Expanded(
+          child: _buildMetricItem(
+            '💰 Earnings',
+            '₹${walletBalance.toStringAsFixed(2)}',
+            'lifetime rewards',
+          ),
+        ),
         const SizedBox(width: 12),
-        Expanded(child: _buildMetricItem('🛡️ Strongholds', '5 warlords', 'active control')),
+        Expanded(
+          child: _buildMetricItem(
+            '📅 Days Active',
+            '$accountAge',
+            accountAge == 1 ? 'day as a raider' : 'days as a raider',
+          ),
+        ),
       ],
     );
   }
@@ -513,17 +532,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildNavigationCTAs() {
+  Widget _buildNavigationCTAs(UserEntity? user) {
     return Column(
       children: [
         _buildNavCard(
-          icon: Icons.qr_code_2_outlined,
-          title: 'FOOD PASSPORT',
-          subtitle: 'Check operational strongholds & restaurant badges',
-          color: AppColors.getPrimary(context),
+          icon: Icons.ios_share_rounded,
+          title: 'SHARE MY CARD',
+          subtitle: 'Flex your stats on your story & invite friends',
+          color: AppColors.gold,
           onTap: () {
             _triggerHaptic();
-            context.push('/profile/passport');
+            _shareCard(user);
           },
         ),
         const SizedBox(height: 12),
@@ -546,6 +565,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onTap: () {
             _triggerHaptic();
             context.push('/request-place');
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildNavCard(
+          icon: Icons.info_outline_rounded,
+          title: 'HOW IT WORKS',
+          subtitle: 'Map legend, raid radius, and raiding guide',
+          color: const Color(0xFF0288D1),
+          onTap: () {
+            _triggerHaptic();
+            _showHowItWorks(context);
           },
         ),
       ],
@@ -599,6 +629,74 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Icon(Icons.chevron_right, color: AppColors.getOnSurfaceMuted(context), size: 18),
           ],
         ),
+      ),
+    );
+  }
+
+  String _levelTitle(int level) {
+    if (level >= 21) return 'Food Legend';
+    if (level >= 11) return 'Zone Warlord';
+    if (level >= 6) return 'Raid Commander';
+    return 'Food Scout';
+  }
+
+  Future<void> _shareCard(UserEntity? user) async {
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile not loaded yet — try again.')),
+      );
+      return;
+    }
+
+    // Show a brief loader while we fetch the conquered-zone count so the card's
+    // challenge headline ("I conquered N spots in <city>") is accurate.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    int? strongholds;
+    int? totalRaids;
+    String? city = user.city;
+    try {
+      final result = await di.sl<GetUserProfile>()(userId: user.id);
+      result.fold((_) {}, (profile) {
+        strongholds = profile.warlordCount;
+        totalRaids = profile.totalRaids;
+        city = profile.city ?? user.city;
+      });
+    } catch (_) {
+      // Fall back to UserEntity-only data — card still renders.
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop(); // dismiss loader
+
+    context.push(
+      '/share-card',
+      extra: StatusCardData(
+        displayName: user.displayName ?? user.username,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        level: user.level,
+        levelTitle: _levelTitle(user.level),
+        totalPoints: user.totalPoints,
+        trustScore: user.trustScore,
+        city: city,
+        strongholds: strongholds,
+        totalRaids: totalRaids,
+      ),
+    );
+  }
+
+  void _showHowItWorks(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      builder: (_) => MapLegendOverlay(
+        onDismiss: () => Navigator.of(context).pop(),
       ),
     );
   }

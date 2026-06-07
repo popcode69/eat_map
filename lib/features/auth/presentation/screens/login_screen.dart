@@ -6,11 +6,12 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import '../../../../core/network/dio_client.dart';
+import '../../../../core/notifications/push_bridge.dart';
+import '../../../../injection_container.dart' as di;
 import 'dart:io';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../core/cache/secure_storage.dart';
-import '../../../../injection_container.dart' as di;
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
@@ -78,10 +79,8 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _routeAfterAuth(BuildContext context) async {
-    final seen = await di.sl<SecureStorage>().hasSeenOnboarding();
-    if (!context.mounted) return;
-    context.go(seen ? '/home' : '/onboarding');
+  void _routeAfterAuth(BuildContext context) {
+    context.go('/home');
   }
 
   /// Requests location permission and dispatches [UpdateLocationRequested]
@@ -211,6 +210,11 @@ class _LoginScreenState extends State<LoginScreen> {
       body: BlocConsumer<AuthBloc, AuthState>(
         listener: (context, state) {
           if (state is Authenticated) {
+            // Register FCM token with the backend for targeted push messages.
+            PushBridge.registerDevice(
+              dioClient: di.sl<DioClient>(),
+              userId: state.user.id,
+            );
             // Login successful — update server-side location immediately
             _updateUserLocation(context);
             ScaffoldMessenger.of(context).showSnackBar(
@@ -219,7 +223,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 backgroundColor: AppColors.getSuccess(context),
               ),
             );
-            // First-time raiders see the tutorial; returning ones go to the map.
             _routeAfterAuth(context);
           } else if (state is AuthFailure) {
             // Login failed

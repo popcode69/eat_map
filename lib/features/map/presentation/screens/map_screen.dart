@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/cache/secure_storage.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../widgets/map_legend_overlay.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_modals.dart';
 import '../../../shell/presentation/screens/main_shell.dart';
@@ -35,6 +36,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _isLocationPermissionGranted = false;
   Map<String, BitmapDescriptor> _markerIcons = {};
   bool _isGeneratingMarkers = false;
+  bool _showLegend = false;
 
   // ─────────────────────────────────────────────────────────────────
   // MARKER GENERATORS
@@ -328,8 +330,20 @@ class _MapScreenState extends State<MapScreen> {
     super.initState();
     _getUserLocation();
     context.read<MapBloc>().add(const LoadNearbyZonesRequested('te7u6b'));
-    // Check for a raid that was running when the app was killed.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _resumeRaidIfActive());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resumeRaidIfActive();
+      _maybeShowLegend();
+    });
+  }
+
+  Future<void> _maybeShowLegend() async {
+    final seen = await SecureStorage().hasSeenMapLegend();
+    if (!seen && mounted) setState(() => _showLegend = true);
+  }
+
+  Future<void> _dismissLegend() async {
+    await SecureStorage().setMapLegendSeen();
+    if (mounted) setState(() => _showLegend = false);
   }
 
   Future<void> _resumeRaidIfActive() async {
@@ -566,7 +580,9 @@ class _MapScreenState extends State<MapScreen> {
     final String? currentUserAvatarUrl =
         authState is Authenticated ? authState.user.avatarUrl : null;
 
-    return Scaffold(
+    return Stack(
+      children: [
+      Scaffold(
       key: _scaffoldKey,
       drawer: _buildDrawer(),
       backgroundColor: AppColors.getBackground(context),
@@ -577,6 +593,9 @@ class _MapScreenState extends State<MapScreen> {
           _buildFloatingLegend(),
         ],
       ),
+    ),
+      if (_showLegend) MapLegendOverlay(onDismiss: _dismissLegend),
+    ],
     );
   }
 

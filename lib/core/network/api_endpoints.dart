@@ -23,6 +23,9 @@ class ApiEndpoints {
   // ── Users ────────────────────────────────────────────────────────────
   static String userProfile(String userId) => '/users/$userId';
 
+  // ── Devices ──────────────────────────────────────────────────────────
+  static const String devicesRegister = '/devices/register';
+
   // ── Raids ───────────────────────────────────────────────────────────
   static const String startRaid = '/raids/start';
   static String verifyRaid(String raidId) => '/raids/$raidId/verify';

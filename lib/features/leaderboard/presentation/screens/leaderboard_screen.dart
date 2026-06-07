@@ -23,7 +23,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(_handleTabSelection);
 
     // Initial load: City Rankings (pass user's city so the backend filters correctly)
@@ -42,9 +42,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
   void _handleTabSelection() {
     if (_tabController.indexIsChanging) {
       HapticFeedback.lightImpact();
-      final scopes = ['city', 'global', 'squad'];
+      final scopes = ['city', 'global'];
       final scope = scopes[_tabController.index];
-      // Pass city only for the city tab
       String? city;
       if (scope == 'city') {
         final authState = context.read<AuthBloc>().state;
@@ -77,7 +76,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
           tabs: const [
             Tab(text: 'CITY'),
             Tab(text: 'GLOBAL'),
-            Tab(text: 'SQUADS'),
           ],
         ),
       ),
@@ -102,6 +100,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
             final rankings = state.rankings;
             final scope = state.scope;
 
+            final authState = context.read<AuthBloc>().state;
+            final currentUserId =
+                authState is Authenticated ? authState.user.id : null;
+            final currentCity =
+                authState is Authenticated ? authState.user.city : null;
+
             return SafeArea(
               child: RefreshIndicator(
                 onRefresh: () async {
@@ -113,14 +117,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                   itemCount: rankings.length + 1,
                   itemBuilder: (context, index) {
                     if (index == 0) {
-                      // Header hero widget
-                      return _buildSpotlightHeader(scope);
+                      return _buildSpotlightHeader(scope, currentCity);
                     }
-                    
+
                     final rankItem = rankings[index - 1];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
-                      child: _buildRankCard(rankItem, scope),
+                      child: _buildRankCard(rankItem, scope, currentUserId),
                     );
                   },
                 ),
@@ -134,9 +137,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     );
   }
 
-  Widget _buildSpotlightHeader(String scope) {
-    String title = 'MUMBAI TACTICAL SECTOR';
-    String subtitle = 'All active raiders within 50km geofence';
+  Widget _buildSpotlightHeader(String scope, String? currentCity) {
+    final cityName = (currentCity != null && currentCity.isNotEmpty)
+        ? currentCity.toUpperCase()
+        : 'YOUR CITY';
+    String title = '$cityName TACTICAL SECTOR';
+    String subtitle = 'All active raiders in $cityName';
     IconData icon = Icons.location_city_outlined;
     Color scopeColor = AppColors.getPrimary(context);
 
@@ -145,11 +151,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
       subtitle = 'Warlords ranking across all operational cities';
       icon = Icons.language_outlined;
       scopeColor = AppColors.getWarning(context);
-    } else if (scope == 'squad') {
-      title = 'SQUAD DOMINANCE MATRICES';
-      subtitle = 'Aggregated territorial points from active squads';
-      icon = Icons.groups_outlined;
-      scopeColor = AppColors.getSuccess(context);
     }
 
     return Container(
@@ -193,10 +194,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     );
   }
 
-  Widget _buildRankCard(dynamic rankItem, String scope) {
+  Widget _buildRankCard(dynamic rankItem, String scope, String? currentUserId) {
     final String? userId = rankItem.userId as String?;
     final int rank = rankItem.rank;
-    final bool isUser = rankItem.username.contains('cyber_raider') || rankItem.username == 'CyberEats';
+    // Identify the logged-in user by their ID (most reliable).
+    // Fall back to username match when userId isn't in the leaderboard response.
+    final bool isUser = currentUserId != null && userId != null
+        ? userId == currentUserId
+        : false;
 
     // Spotlight visual coloring for Top 3
     Color medalColor = Colors.transparent;
@@ -282,7 +287,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
               border: Border.all(color: AppColors.getBorder(context), width: 1),
             ),
             child: Icon(
-              scope == 'squad' ? Icons.shield_outlined : Icons.person_outline,
+              Icons.person_outline,
               color: isUser ? AppColors.getPrimary(context) : AppColors.getOnSurfaceMuted(context),
               size: 20,
             ),
@@ -302,21 +307,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                   ),
                 ),
                 const SizedBox(height: 2),
-                if (scope != 'squad' && rankItem.squadName != null)
-                  Text(
-                    'Squad: ${rankItem.squadName}',
-                    style: AppTypography.caption.copyWith(color: AppColors.getOnSurfaceMuted(context)),
-                  )
-                else if (scope == 'squad')
-                  Text(
-                    '${rankItem.warlordCount} strongholds conquered',
-                    style: AppTypography.caption.copyWith(color: AppColors.getOnSurfaceMuted(context)),
-                  )
-                else
-                  Text(
-                    '${rankItem.warlordCount} active warlord claims',
-                    style: AppTypography.caption.copyWith(color: AppColors.getOnSurfaceMuted(context)),
-                  ),
+                Text(
+                  '${rankItem.warlordCount} active warlord claims',
+                  style: AppTypography.caption.copyWith(color: AppColors.getOnSurfaceMuted(context)),
+                ),
               ],
             ),
           ),
