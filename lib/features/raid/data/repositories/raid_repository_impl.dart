@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
@@ -70,60 +69,43 @@ class RaidRepositoryImpl implements RaidRepository {
   @override
   Future<Either<Failure, Map<String, dynamic>>> verifyRaid({
     required String raidId,
-    required double spendAmount,
-    String? upiRef,
-    String? billPhotoPath,
+    String? photoPath,
   }) async {
     try {
-      // Backend expects JSON (not multipart):
-      // { verification_type, upi_ref?, bill_photo_base64?, spend_amount_paise }
-      final bool hasUpi = upiRef != null && upiRef.isNotEmpty;
-
-      // Convert bill photo to base64 if a real file path was provided
-      String? billPhotoBase64;
-      if (billPhotoPath != null && billPhotoPath.isNotEmpty) {
-        final file = File(billPhotoPath);
+      // Presence-only verification. Backend expects multipart/form-data with a
+      // single optional `photo` field (presence proof — not required). There is
+      // no bill/spend/UPI flow anymore; validity is decided server-side from the
+      // dwell time (>= MIN_RAID_MINUTES).
+      final formMap = <String, dynamic>{};
+      if (photoPath != null && photoPath.isNotEmpty) {
+        final file = File(photoPath);
         if (await file.exists()) {
-          final bytes = await file.readAsBytes();
-          billPhotoBase64 = base64Encode(bytes);
+          formMap['photo'] = await MultipartFile.fromFile(
+            file.path,
+            filename: file.path.split(Platform.pathSeparator).last,
+          );
         }
       }
 
-      // Determine verification method:
-      //   "upi"        — user supplied a UPI transaction reference
-      //   "bill_photo" — user uploaded a receipt photo
-      //   "timer"      — user completed the required stay (no bill needed)
-      String verificationType;
-      if (hasUpi) {
-        verificationType = 'upi';
-      } else if (billPhotoBase64 != null) {
-        verificationType = 'bill_photo';
-      } else {
-        verificationType = 'timer';
-      }
-
-      final Map<String, dynamic> data = {
-        'verification_type': verificationType,
-        'spend_amount': spendAmount, // backend expects rupees as a float
-      };
-      if (hasUpi) data['upi_ref'] = upiRef;
-      if (billPhotoBase64 != null) data['bill_photo_base64'] = billPhotoBase64;
-
       final response = await _dioClient.dio.post(
         ApiEndpoints.verifyRaid(raidId),
-        data: data, // JSON body
+        data: FormData.fromMap(formMap),
       );
 
       return Right(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       // No network → return mock success so dev flow completes.
+      // Flat points: 100 (first capture) / 50 (raid on captured zone).
       if (e.type == DioExceptionType.connectionError ||
           e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.unknown) {
         return const Right({
-          'points': 25.0,
-          'rank': 1,
+          'points_earned': 100,
+          'earn_rate': null,
+          'time_spent_mins': 5,
+          'rank_at_zone': 1,
           'is_warlord': true,
+          'message': 'Stronghold captured!',
         });
       }
 
@@ -165,9 +147,8 @@ class RaidRepositoryImpl implements RaidRepository {
       zoneId: zoneId,
       startedAt: DateTime.now(),
       durationMins: (json['duration_mins'] as num?)?.toInt() ?? 5,
-      spendAmount: 0.0,
       pointsEarned: 0.0,
-      earnRate: 1.0,
+      earnRate: null,
       isValid: false,
       deviceId: deviceId,
       gpsLat: lat,
@@ -183,9 +164,8 @@ class RaidRepositoryImpl implements RaidRepository {
       zoneId: zoneId,
       startedAt: DateTime.now(),
       durationMins: 5,
-      spendAmount: 0.0,
       pointsEarned: 0.0,
-      earnRate: 1.0,
+      earnRate: null,
       isValid: false,
       deviceId: deviceId,
       gpsLat: lat,

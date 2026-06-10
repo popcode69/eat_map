@@ -35,6 +35,15 @@ class ApiEndpoints {
   static const String walletTransactions = '/wallet/transactions';
   static const String walletWithdraw = '/wallet/withdraw';
 
+  // ── Earnings ────────────────────────────────────────────────────────
+  // Mixed-unit ledger: point rows (zone_capture/raid_earn/passive_earn)
+  // and cash rows (warlord_payout/weekly_prize), plus pre-existing types.
+  static const String earnings = '/earnings';
+
+  // ── Payouts ─────────────────────────────────────────────────────────
+  // Live projection of the user's monthly Warlord pool share (read-only).
+  static const String warlordEstimate = '/payouts/warlord/estimate';
+
   // ── Place Requests ──────────────────────────────────────────────────
   static const String submitPlaceRequest = '/places/requests';
 

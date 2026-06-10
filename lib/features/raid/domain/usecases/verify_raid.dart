@@ -9,15 +9,11 @@ class VerifyRaid {
 
   Future<Either<Failure, Map<String, dynamic>>> call({
     required String raidId,
-    required double spendAmount,
-    String? upiRef,
-    String? billPhotoPath,
+    String? photoPath,
   }) async {
     return await _repository.verifyRaid(
       raidId: raidId,
-      spendAmount: spendAmount,
-      upiRef: upiRef,
-      billPhotoPath: billPhotoPath,
+      photoPath: photoPath,
     );
   }
 }

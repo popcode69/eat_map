@@ -10,10 +10,11 @@ abstract class RaidRepository {
     required String deviceId,
   });
 
+  /// Presence-only verification. A raid is valid only after the user has
+  /// physically stayed the required time (MIN_RAID_MINUTES) — there is no
+  /// bill/spend/UPI flow anymore. [photoPath] is an optional presence photo.
   Future<Either<Failure, Map<String, dynamic>>> verifyRaid({
     required String raidId,
-    required double spendAmount,
-    String? upiRef,
-    String? billPhotoPath,
+    String? photoPath,
   });
 }

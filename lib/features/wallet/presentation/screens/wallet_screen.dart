@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/connectivity/connectivity_cubit.dart';
+import '../../../payouts/presentation/widgets/passive_earnings_card.dart';
 import '../bloc/wallet_bloc.dart';
 import '../bloc/wallet_event.dart';
 import '../bloc/wallet_state.dart';
@@ -180,7 +181,10 @@ class _WalletScreenState extends State<WalletScreen> {
                       // 1. Cyberpunk-themed Balance Hero Card
                       _buildBalanceCard(balance),
                       const SizedBox(height: 24),
-  
+
+                      // 1b. Passive (Warlord) earnings projection
+                      const PassiveEarningsCard(),
+
                       // 2. UPI Withdrawal Form
                       _buildWithdrawalForm(balance, state is WithdrawalInProgress, isOffline),
                       const SizedBox(height: 28),
@@ -273,7 +277,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Instant transfer. Minimum withdrawal limit ₹100.',
+                    'Cash arrives on weekly & monthly settlements. Min withdrawal ₹100.',
                     style: AppTypography.caption.copyWith(
                       color: AppColors.getSuccess(context),
                       fontWeight: FontWeight.bold,
@@ -430,15 +434,41 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
+  /// Human-readable label for a ledger entry type.
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'zone_capture':
+        return 'ZONE CAPTURE';
+      case 'raid_earn':
+        return 'RAID REWARD';
+      case 'passive_earn':
+        return 'PASSIVE (WARLORD)';
+      case 'warlord_payout':
+        return 'WARLORD PAYOUT';
+      case 'weekly_prize':
+        return 'WEEKLY PRIZE';
+      default:
+        return type.toUpperCase();
+    }
+  }
+
   Widget _buildTransactionItem(dynamic tx) {
     final bool isDebit = tx.type == 'withdrawal';
+    // Point rows (zone_capture/raid_earn/passive_earn) carry points; everything
+    // else carries ₹. They are rendered with distinct units and never summed.
+    final bool isPoints = tx.isPoints as bool;
     final Color amountColor = isDebit
         ? AppColors.getError(context)
-        : tx.type == 'bonus'
-            ? AppColors.getWarning(context)
-            : AppColors.getSuccess(context);
+        : isPoints
+            ? AppColors.getPrimary(context)
+            : tx.type == 'bonus'
+                ? AppColors.getWarning(context)
+                : AppColors.getSuccess(context);
 
     final String sign = isDebit ? '-' : '+';
+    final String amountString = isPoints
+        ? '$sign${tx.amount.toStringAsFixed(0)} pts'
+        : '$sign ₹${tx.amount.toStringAsFixed(0)}';
     final String dateString = DateFormat('dd MMM yyyy, hh:mm a').format(tx.createdAt);
 
     return Container(
@@ -465,7 +495,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 Row(
                   children: [
                     Text(
-                      tx.type.toUpperCase(),
+                      _typeLabel(tx.type as String),
                       style: AppTypography.caption.copyWith(
                         color: AppColors.getOnSurfaceMuted(context),
                         fontWeight: FontWeight.bold,
@@ -492,7 +522,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
           const SizedBox(width: 12),
           Text(
-            '$sign ₹${tx.amount.toStringAsFixed(0)}',
+            amountString,
             style: AppTypography.titleLarge.copyWith(
               color: amountColor,
               fontWeight: FontWeight.bold,

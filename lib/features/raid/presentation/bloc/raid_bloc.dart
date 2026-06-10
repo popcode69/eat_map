@@ -64,19 +64,18 @@ final class RaidResumeRequested extends RaidEvent {
 
 final class RaidVerificationSubmitted extends RaidEvent {
   final String raidId;
-  final double spendAmount;
-  final String? upiRef;
-  final String? billPhotoPath;
+
+  /// Optional presence photo. Verification is presence-time only now — there
+  /// is no bill/spend/UPI input.
+  final String? photoPath;
 
   const RaidVerificationSubmitted({
     required this.raidId,
-    required this.spendAmount,
-    this.upiRef,
-    this.billPhotoPath,
+    this.photoPath,
   });
 
   @override
-  List<Object?> get props => [raidId, spendAmount, upiRef, billPhotoPath];
+  List<Object?> get props => [raidId, photoPath];
 }
 
 final class RaidTimerTicked extends RaidEvent {
@@ -122,18 +121,27 @@ final class RaidTimerActive extends RaidState {
 final class RaidVerifying extends RaidState {}
 
 final class RaidSuccess extends RaidState {
+  /// Flat points awarded: 100 (first capture) or 50 (raid on captured zone).
   final double points;
-  final int rank;
+
+  /// Visit rank — informational only, no longer affects points. May be null.
+  final int? rank;
+
+  /// True if this raid made the user the zone's Warlord.
   final bool isWarlord;
+
+  /// Optional server-supplied message.
+  final String? message;
 
   const RaidSuccess({
     required this.points,
-    required this.rank,
+    this.rank,
     required this.isWarlord,
+    this.message,
   });
 
   @override
-  List<Object?> get props => [points, rank, isWarlord];
+  List<Object?> get props => [points, rank, isWarlord, message];
 }
 
 /// Timer reached zero naturally — the user stayed the required time.
@@ -307,9 +315,7 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
 
     final result = await _verifyRaid(
       raidId: event.raidId,
-      spendAmount: event.spendAmount,
-      upiRef: event.upiRef,
-      billPhotoPath: event.billPhotoPath,
+      photoPath: event.photoPath,
     );
 
     // Clear persisted raid regardless of outcome — the user has attempted
@@ -330,10 +336,16 @@ class RaidBloc extends Bloc<RaidEvent, RaidState> {
             );
           }
         }
+        // Flat points model: prefer `points_earned`, fall back to legacy
+        // `points`. Rank is informational only and may be absent.
+        final points =
+            (data['points_earned'] ?? data['points']) as num? ?? 0;
+        final rank = (data['rank_at_zone'] ?? data['rank']) as num?;
         emit(RaidSuccess(
-          points: (data['points'] as num).toDouble(),
-          rank: (data['rank'] as num).toInt(),
+          points: points.toDouble(),
+          rank: rank?.toInt(),
           isWarlord: isWarlord,
+          message: data['message'] as String?,
         ));
       },
     );

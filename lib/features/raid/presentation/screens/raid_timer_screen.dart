@@ -62,10 +62,6 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
         ));
   }
 
-  void _triggerHaptic() {
-    HapticFeedback.lightImpact();
-  }
-
   String _formatDuration(int totalSeconds) {
     final minutes = (totalSeconds / 60).floor();
     final seconds = totalSeconds % 60;
@@ -91,11 +87,11 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
       body: BlocConsumer<RaidBloc, RaidState>(
         listener: (context, state) {
           if (state is bloc_state.RaidTimerCompleted) {
-            // Timer completed → auto-verify immediately, no bill required.
+            // Timer completed → auto-verify immediately. Presence-only:
+            // no bill/spend, just the required stay.
             HapticFeedback.heavyImpact();
             context.read<RaidBloc>().add(RaidVerificationSubmitted(
                   raidId: state.raidId,
-                  spendAmount: 0,
                 ));
           } else if (state is bloc_state.RaidSuccess) {
             AppModals.raidResult(
@@ -223,61 +219,27 @@ class _RaidTimerScreenState extends State<RaidTimerScreen> {
                     ),
   
                     const SizedBox(height: 80),
-  
-                    // Verification CTAs
+
+                    // Presence requirement notice — verification is presence-only;
+                    // there is no longer any way to skip the timer.
                     Card(
                       color: AppColors.getSurface(context),
                       child: Padding(
                         padding: const EdgeInsets.all(20.0),
                         child: Column(
                           children: [
+                            Icon(Icons.timer_outlined, color: themeColor, size: 32),
+                            const SizedBox(height: 12),
                             Text(
-                              'Skip Timer — Upload Bill',
+                              'Stay to Capture',
                               style: AppTypography.titleLarge,
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Have a receipt or UPI ref? Upload it now to verify instantly without waiting.',
+                              'Remain at the stronghold until the timer runs out. '
+                              'We verify your visit automatically — no bill or receipt needed.',
                               style: AppTypography.caption.copyWith(color: AppColors.getOnSurfaceMuted(context)),
                               textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 24),
-                            
-                            // VERIFY SUBMIT CTA
-                            ElevatedButton(
-                              onPressed: () {
-                                _triggerHaptic();
-                                context.push('/bill-upload', extra: {
-                                  'raidId': state.raidId,
-                                  'zoneName': widget.zoneName,
-                                  'colour': widget.colour,
-                                  'userLat': widget.userLat,
-                                  'userLng': widget.userLng,
-                                });
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: themeColor,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                minimumSize: const Size(double.infinity, 56),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12.0),
-                                ),
-                              ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.receipt_long, color: Colors.white),
-                                  SizedBox(width: 10),
-                                  Text(
-                                    'UPLOAD BILL TO VERIFY NOW',
-                                    style: TextStyle(
-                                      fontFamily: AppTypography.headingFont,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ),
                           ],
                         ),

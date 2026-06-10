@@ -21,7 +21,6 @@ import 'features/shell/presentation/screens/main_shell.dart';
 // Raid
 import 'features/raid/presentation/bloc/raid_bloc.dart';
 import 'features/raid/presentation/screens/raid_timer_screen.dart';
-import 'features/raid/presentation/screens/bill_upload_screen.dart';
 
 // Wallet
 import 'features/wallet/presentation/bloc/wallet_bloc.dart';
@@ -136,22 +135,6 @@ class EatMapApp extends StatelessWidget {
           return _buildPage(
             RaidTimerScreen(
               zoneId: params['zoneId'] as String,
-              zoneName: params['zoneName'] as String,
-              colour: params['colour'] as String,
-              userLat: (params['userLat'] as num?)?.toDouble(),
-              userLng: (params['userLng'] as num?)?.toDouble(),
-            ),
-            state,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/bill-upload',
-        pageBuilder: (context, state) {
-          final params = state.extra as Map<String, dynamic>;
-          return _buildPage(
-            BillUploadScreen(
-              raidId: params['raidId'] as String,
               zoneName: params['zoneName'] as String,
               colour: params['colour'] as String,
               userLat: (params['userLat'] as num?)?.toDouble(),

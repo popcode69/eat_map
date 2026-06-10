@@ -52,6 +52,12 @@ import 'features/leaderboard/domain/repositories/leaderboard_repository.dart';
 import 'features/leaderboard/domain/usecases/get_city_leaderboard.dart';
 import 'features/leaderboard/presentation/bloc/leaderboard_bloc.dart';
 
+// Payouts Module
+import 'features/payouts/data/repositories/payouts_repository_impl.dart';
+import 'features/payouts/domain/repositories/payouts_repository.dart';
+import 'features/payouts/domain/usecases/get_warlord_estimate.dart';
+import 'features/payouts/presentation/bloc/payouts_bloc.dart';
+
 final sl = GetIt.instance;
 
 Future<void> init() async {
@@ -173,5 +179,19 @@ Future<void> init() async {
 
   sl.registerFactory<LeaderboardBloc>(() => LeaderboardBloc(
         getCityLeaderboard: sl<GetCityLeaderboard>(),
+      ));
+
+  // ==========================================
+  // 7. FEATURES - PAYOUTS
+  // ==========================================
+  sl.registerLazySingleton<PayoutsRepository>(() => PayoutsRepositoryImpl(
+        dioClient: sl<DioClient>(),
+      ));
+
+  sl.registerLazySingleton<GetWarlordEstimate>(
+      () => GetWarlordEstimate(sl<PayoutsRepository>()));
+
+  sl.registerFactory<PayoutsBloc>(() => PayoutsBloc(
+        getWarlordEstimate: sl<GetWarlordEstimate>(),
       ));
 }

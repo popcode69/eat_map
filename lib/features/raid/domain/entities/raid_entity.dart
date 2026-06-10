@@ -7,10 +7,11 @@ class RaidEntity extends Equatable {
   final DateTime startedAt;
   final DateTime? completedAt;
   final int durationMins;
-  final double spendAmount;
   final String? verification;
   final double pointsEarned;
-  final double earnRate;
+  // Always null under the flat points model — kept for backwards compatibility
+  // with any persisted/cached payloads. Do not display it.
+  final double? earnRate;
   final bool isValid;
   final String? deviceId;
   final double? gpsLat;
@@ -24,10 +25,9 @@ class RaidEntity extends Equatable {
     required this.startedAt,
     this.completedAt,
     required this.durationMins,
-    required this.spendAmount,
     this.verification,
     required this.pointsEarned,
-    required this.earnRate,
+    this.earnRate,
     required this.isValid,
     this.deviceId,
     this.gpsLat,
@@ -43,7 +43,6 @@ class RaidEntity extends Equatable {
         startedAt,
         completedAt,
         durationMins,
-        spendAmount,
         verification,
         pointsEarned,
         earnRate,

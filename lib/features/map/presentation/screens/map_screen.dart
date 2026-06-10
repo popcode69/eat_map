@@ -17,7 +17,7 @@ import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../../auth/presentation/bloc/auth_event.dart';
 import '../../../zone/domain/entities/zone_entity.dart';
-import '../../../raid/presentation/bloc/raid_bloc.dart' show RaidBloc, RaidResumeRequested, RaidTimerActive, RaidTimerCompleted;
+import '../../../raid/presentation/bloc/raid_bloc.dart' show RaidBloc, RaidResumeRequested;
 import '../bloc/map_bloc.dart';
 import '../bloc/map_bloc.dart' as bloc_state;
 import '../../../zone/presentation/widgets/zone_detail_sheet.dart';
@@ -355,54 +355,39 @@ class _MapScreenState extends State<MapScreen> {
     final zoneName = raid['zoneName'] as String? ?? 'Unknown Place';
     final colour = raid['colour'] as String? ?? '#E53935';
     final status = raid['status'] as String? ?? 'running';
-
-    if (status == 'awaiting_verification') {
-      // Timer finished before the app was killed — send straight to bill upload.
-      context.push('/bill-upload', extra: {
-        'raidId': raidId,
-        'zoneName': zoneName,
-        'colour': colour,
-      });
-      return;
-    }
-
-    // Timer was still running — calculate remaining seconds.
-    final startedAt = DateTime.tryParse(raid['startedAt'] as String? ?? '');
     final durationMins = (raid['durationMins'] as num?)?.toInt() ?? 5;
-    if (startedAt == null) {
-      await SecureStorage().clearActiveRaid();
-      return;
-    }
 
-    final endTime = startedAt.add(Duration(minutes: durationMins));
-    final remaining = endTime.difference(DateTime.now()).inSeconds;
+    // How much time (if any) is left on the timer.
+    final startedAt = DateTime.tryParse(raid['startedAt'] as String? ?? '');
+    final remaining = startedAt == null
+        ? 0
+        : startedAt
+            .add(Duration(minutes: durationMins))
+            .difference(DateTime.now())
+            .inSeconds;
 
-    if (remaining > 0) {
-      // Resume the timer from where it left off.
-      if (!mounted) return;
-      context.read<RaidBloc>().add(RaidResumeRequested(
-            raidId: raidId,
-            zoneId: zoneId,
-            secondsRemaining: remaining,
-            totalSeconds: durationMins * 60,
-          ));
-      context.push('/raid-timer', extra: {
-        'zoneId': zoneId,
-        'zoneName': zoneName,
-        'colour': colour,
-        'userLat': _currentPosition?.latitude,
-        'userLng': _currentPosition?.longitude,
-      });
-    } else {
-      // Timer expired while app was killed — go to bill upload.
-      await SecureStorage().clearActiveRaid();
-      if (!mounted) return;
-      context.push('/bill-upload', extra: {
-        'raidId': raidId,
-        'zoneName': zoneName,
-        'colour': colour,
-      });
-    }
+    // Verification is presence-only and runs automatically when the timer hits
+    // zero — there is no bill-upload step anymore. If the timer already
+    // finished (flagged awaiting_verification, or it elapsed while the app was
+    // killed), resume at 0s so it completes and auto-verifies through the
+    // normal RaidTimerScreen flow.
+    final secondsRemaining =
+        (status == 'awaiting_verification' || remaining <= 0) ? 0 : remaining;
+
+    if (!mounted) return;
+    context.read<RaidBloc>().add(RaidResumeRequested(
+          raidId: raidId,
+          zoneId: zoneId,
+          secondsRemaining: secondsRemaining,
+          totalSeconds: durationMins * 60,
+        ));
+    context.push('/raid-timer', extra: {
+      'zoneId': zoneId,
+      'zoneName': zoneName,
+      'colour': colour,
+      'userLat': _currentPosition?.latitude,
+      'userLng': _currentPosition?.longitude,
+    });
   }
 
   Future<void> _getUserLocation() async {
